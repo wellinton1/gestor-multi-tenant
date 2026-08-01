@@ -1,0 +1,52 @@
+# Dependencies
+app/node_modules/
+
+# Environment files (secrets)
+app/.env
+app/.env.local
+app/.env.*.local
+
+# Data files
+app/data/
+*.db
+*.json
+!package.json
+!package-lock.json
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+
+# SSL/TLS certificates
+*.pem
+*.key
+*.crt
+*.p12
+
+# Backup files
+*.bak
+*.backup

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Run Gestor Multi-Tenant
+Comment=Inicia o servidor gestor multi-tenant
+Exec=bash -lc 'cd "$(dirname "%k")" && ./run-server.sh'
+Path=%k
+Terminal=true
+Categories=Utility;

@@ -1,0 +1,2 @@
+Email: admin@admin.com
+Senha: Admin@123456 (conforme configurado no .env)
