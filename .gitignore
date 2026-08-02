@@ -50,3 +50,7 @@ tmp/
 # Backup files
 *.bak
 *.backup
+
+# Credentials / secrets files
+senha.txt
+*.senha
