@@ -11,7 +11,11 @@ function getCsrfToken() {
 const NICHE_ICON = {
   'Barbearia': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 8l11 8M8.5 16l11-8"/></svg>',
   'Pizzaria': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5l9-3 9 3-9 16z"/><circle cx="12" cy="9" r="1" fill="currentColor"/><circle cx="9" cy="13" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/></svg>',
-  'Lava Jato': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l1.5-5A2 2 0 016.4 6.5h11.2A2 2 0 0119.5 8L21 13v5a1 1 0 01-1 1h-1a1 1 0 01-1-1v-1H6v1a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><circle cx="7" cy="16.5" r="1.4"/><circle cx="17" cy="16.5" r="1.4"/></svg>'
+  'Lava Jato': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l1.5-5A2 2 0 016.4 6.5h11.2A2 2 0 0119.5 8L21 13v5a1 1 0 01-1 1h-1a1 1 0 01-1-1v-1H6v1a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><circle cx="7" cy="16.5" r="1.4"/><circle cx="17" cy="16.5" r="1.4"/></svg>',
+  'Salao de Beleza': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>',
+  'Doces e Salgados': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21h16v-7H4z"/><path d="M4 14c0-3 2-5 8-5s8 2 8 5"/><path d="M9 5c0-1 1-2 3-2s3 1 3 2"/><path d="M12 5v3"/></svg>',
+  'Oficina': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 00-5.4 5l-6 6 2.4 2.4 6-6a4 4 0 005-5.4l-2.6 2.6-2-2z"/></svg>',
+  'Petshop': '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="11" r="2"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="7" r="2"/><circle cx="18.5" cy="11" r="2"/><path d="M8 16c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5-1.8 4-4 4-4-2-4-4z"/></svg>'
 };
 const DEFAULT_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5"/><path d="M4 9h16v10H4z"/><path d="M9 19v-5h6v5"/></svg>';
 const PHONE_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4l2 5-2.5 1.5a11 11 0 005 5L14 13l5 2v4a2 2 0 01-2 2A16 16 0 014 6a2 2 0 012-2z"/></svg>';
@@ -66,14 +70,13 @@ async function boot() {
 
 function renderPage() {
   if (!establishment) return;
+  document.body.dataset.niche = establishment.niche || 'Outro';
   const services = Array.isArray(establishment.services) ? establishment.services : [];
   const safeSelectedServices = Array.isArray(selectedServices) ? selectedServices : [];
   const icon = NICHE_ICON[establishment.niche] || DEFAULT_ICON;
   const subtotal = safeSelectedServices.reduce((sum, item) => sum + (item?.price || 0) * (item?.qty || 0), 0);
   const itemCount = safeSelectedServices.reduce((sum, item) => sum + (item?.qty || 0), 0);
   const cooldownActive = bookingCooldown > 0;
-  const accent = '#f2761f';
-  const accentDark = '#d1600f';
 
   function safeMap(arr, fn) {
     if (!Array.isArray(arr) || typeof fn !== 'function') return '';
@@ -81,7 +84,7 @@ function renderPage() {
   }
 
   root.innerHTML = `
-    <div class="portal-page" style="--portal-accent:${accent}; --portal-accent-dark:${accentDark};">
+    <div class="portal-page">
       <div class="portal-hero">
         <div class="hero-badge">${escapeHtml(establishment.niche)}</div>
         <div class="hero-brand">${establishment.logoDataUrl ? `<img src="${establishment.logoDataUrl}"/>` : icon}</div>

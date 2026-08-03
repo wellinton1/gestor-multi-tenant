@@ -4,6 +4,8 @@ const store = require('../data/store');
 const { normalizeSelectedServices, buildServiceSummary } = require('../utils/booking');
 const { z } = require('zod');
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const router = express.Router();
 
 // Validation schemas
@@ -56,7 +58,10 @@ router.get('/:establishmentId', async (req, res) => {
     });
   } catch (err) {
     console.error('ERROR GET /api/portal/:establishmentId:', err.message);
-    res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      ...(isProduction ? {} : { details: err.message })
+    });
   }
 });
 
@@ -133,7 +138,10 @@ router.get('/:establishmentId/available-times', validate(availableTimesQuerySche
     res.json({ slots, dayName, hours: dayHours });
   } catch (err) {
     console.error('ERROR GET /api/portal/:establishmentId/available-times:', err.message);
-    res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      ...(isProduction ? {} : { details: err.message })
+    });
   }
 });
 
@@ -194,7 +202,10 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
     res.status(201).json({ ok: true, appointment, total });
   } catch (err) {
     console.error('ERROR in POST /api/portal/:id/book:', err.message);
-    res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      ...(isProduction ? {} : { details: err.message })
+    });
   }
 });
 

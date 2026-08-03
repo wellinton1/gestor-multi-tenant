@@ -24,6 +24,10 @@ const ICONS = {
   pizza: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5l9-3 9 3-9 16z"/><circle cx="12" cy="9" r="1" fill="currentColor"/><circle cx="9" cy="13" r="1" fill="currentColor"/><circle cx="15" cy="13" r="1" fill="currentColor"/></svg>',
   car: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l1.5-5A2 2 0 016.4 6.5h11.2A2 2 0 0119.5 8L21 13v5a1 1 0 01-1 1h-1a1 1 0 01-1-1v-1H6v1a1 1 0 01-1 1H4a1 1 0 01-1-1z"/><circle cx="7" cy="16.5" r="1.4"/><circle cx="17" cy="16.5" r="1.4"/></svg>',
   store: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5"/><path d="M4 9h16v10H4z"/><path d="M9 19v-5h6v5"/></svg>',
+  sparkles: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/><path d="M5 14l.6 1.8L7.5 16.5l-1.9.7L5 19l-.6-1.8L2.5 16.5l1.9-.7z"/></svg>',
+  cake: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21h16v-7H4z"/><path d="M4 14c0-3 2-5 8-5s8 2 8 5"/><path d="M4 14l16 0"/><path d="M9 5c0-1 1-2 3-2s3 1 3 2"/><path d="M12 5v3"/><circle cx="12" cy="3" r="0.5" fill="currentColor"/></svg>',
+  wrench2: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 00-5.4 5l-6 6 2.4 2.4 6-6a4 4 0 005-5.4l-2.6 2.6-2-2z"/></svg>',
+  paw: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="11" r="2"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="7" r="2"/><circle cx="18.5" cy="11" r="2"/><path d="M8 16c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5-1.8 4-4 4-4-2-4-4z"/></svg>',
   upload: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>',
   sun: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M1.5 12h3M19.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>',
   moon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 109.8 9.8z"/></svg>',
@@ -34,9 +38,25 @@ const ICONS = {
 const NICHE_ICON = {
   'Barbearia': ICONS.scissors,
   'Pizzaria': ICONS.pizza,
-  'Lava Jato': ICONS.car
+  'Lava Jato': ICONS.car,
+  'Salao de Beleza': ICONS.sparkles,
+  'Doces e Salgados': ICONS.cake,
+  'Oficina': ICONS.wrench2,
+  'Petshop': ICONS.paw,
+  'Outro': ICONS.store
 };
 function nicheIcon(niche) { return NICHE_ICON[niche] || ICONS.store; }
+
+const NICHE_OPTIONS = [
+  { value: 'Barbearia', icon: ICONS.scissors, desc: 'Cortes, barba e grooming' },
+  { value: 'Salao de Beleza', icon: ICONS.sparkles, desc: 'Cabelo, unhas, estetica' },
+  { value: 'Lava Jato', icon: ICONS.car, desc: 'Lavagem e detalhamento' },
+  { value: 'Pizzaria', icon: ICONS.pizza, desc: 'Pizzas e delivery' },
+  { value: 'Doces e Salgados', icon: ICONS.cake, desc: 'Confeitaria esalgados' },
+  { value: 'Oficina', icon: ICONS.wrench2, desc: 'Mecanica e manutencao' },
+  { value: 'Petshop', icon: ICONS.paw, desc: 'Banho, tosa e pets' },
+  { value: 'Outro', icon: ICONS.store, desc: 'Outro tipo de negocio' }
+];
 
 // ---------- state ----------
 let currentUser = null;
@@ -226,8 +246,10 @@ function render() {
 
 // ================= LOGIN =================
 function renderLogin(errorMsg) {
+  const currentTheme = getTheme();
   root.innerHTML = `
     <div class="centered-screen">
+      <button class="top-theme-toggle" id="login-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
       <div class="login-card">
         <div class="brand-icon">${ICONS.store}</div>
         <h1>Painel de Gestao</h1>
@@ -248,6 +270,7 @@ function renderLogin(errorMsg) {
       </div>
     </div>
   `;
+  document.getElementById('login-theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -277,6 +300,7 @@ async function logout() {
 
 // ================= ESTABLISHMENT SELECTOR =================
 async function renderSelector() {
+  document.body.removeAttribute('data-niche');
   root.innerHTML = `<div class="loading-state">Carregando estabelecimentos...</div>`;
   try {
     establishments = await api('GET', '/api/establishments');
@@ -284,8 +308,10 @@ async function renderSelector() {
     return renderLogin('Sessao expirada, entre novamente.');
   }
 
+  const currentTheme = getTheme();
   root.innerHTML = `
     <div class="selector-screen">
+      <button class="top-theme-toggle" id="selector-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
       <div class="selector-top">
         <span class="suite-pill">${ICONS.store} Multi-Tenant SaaS</span>
         <h1>Escolha um estabelecimento</h1>
@@ -319,8 +345,8 @@ async function renderSelector() {
           `}
           <button class="btn-icon danger delete-tenant-btn" data-id="${est.id}" title="Excluir estabelecimento">${ICONS.trash}</button>
         </div>
-        ${currentUser && (currentUser.role === 'admin' || currentUser.allowedEstablishmentIds === null) ? `<button class="btn btn-secondary create-user-btn" data-id="${est.id}">Criar acesso</button>` : ''}
       </div>
+      ${currentUser && (currentUser.role === 'admin' || currentUser.allowedEstablishmentIds === null) ? `<a class="create-user-link" data-id="${est.id}" href="#">Criar acesso</a>` : ''}
     </div>
   `).join('') + `
     ${currentUser && currentUser.role === 'admin' ? `
@@ -364,7 +390,7 @@ async function renderSelector() {
       }
     });
   });
-  grid.querySelectorAll('.create-user-btn').forEach((btn) => {
+  grid.querySelectorAll('.create-user-link').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const est = establishments.find((item) => item.id === btn.dataset.id);
@@ -374,6 +400,7 @@ async function renderSelector() {
   });
   document.getElementById('new-tenant-card').addEventListener('click', openNewEstablishmentModal);
   document.getElementById('selector-logout').addEventListener('click', logout);
+  document.getElementById('selector-theme-toggle').addEventListener('click', toggleTheme);
 }
 
 function renderSelectorPublic() {
@@ -382,6 +409,7 @@ function renderSelectorPublic() {
     establishments = list;
     root.innerHTML = `
       <div class="selector-screen">
+        <button class="top-theme-toggle" id="selector-theme-toggle" title="${getTheme() === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${getTheme() === 'dark' ? ICONS.sun : ICONS.moon}</button>
         <div class="selector-top">
           <span class="suite-pill">${ICONS.store} Multi-Tenant SaaS</span>
           <h1>Escolha um estabelecimento</h1>
@@ -390,6 +418,8 @@ function renderSelectorPublic() {
         <div class="selector-grid" id="selector-grid"></div>
       </div>
     `;
+
+    document.getElementById('selector-theme-toggle').addEventListener('click', toggleTheme);
 
     const grid = document.getElementById('selector-grid');
     grid.innerHTML = establishments.map((est) => `
@@ -508,15 +538,16 @@ function openNewEstablishmentModal() {
       </div>
       <div class="form-field">
         <label>Nicho *</label>
-        <select name="niche" required>
-          <option value="Barbearia">Barbearia</option>
-          <option value="Pizzaria">Pizzaria</option>
-          <option value="Lava Jato">Lava Jato</option>
-          <option value="Salao de Beleza">Salao de Beleza</option>
-          <option value="Oficina">Oficina</option>
-          <option value="Petshop">Petshop</option>
-          <option value="Outro">Outro</option>
-        </select>
+        <div class="niche-selector-grid" id="niche-selector-grid">
+          ${NICHE_OPTIONS.map((opt, i) => `
+            <div class="niche-option${i === 0 ? ' selected' : ''}" data-niche="${opt.value}">
+              <div class="niche-icon">${opt.icon}</div>
+              <div class="niche-label">${opt.value}</div>
+              <div class="niche-desc">${opt.desc}</div>
+            </div>
+          `).join('')}
+        </div>
+        <input type="hidden" name="niche" id="niche-hidden" value="Barbearia" />
       </div>
       <div class="form-grid">
         <div class="form-field">
@@ -550,6 +581,17 @@ function openNewEstablishmentModal() {
   let logoDataUrl = '';
   showModal('Novo Estabelecimento', bodyHtml, (overlay) => {
     overlay.querySelector('#cancel-new-est').addEventListener('click', closeModal);
+
+    overlay.querySelectorAll('.niche-option').forEach((opt) => {
+      opt.addEventListener('click', () => {
+        overlay.querySelectorAll('.niche-option').forEach((o) => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        const niche = opt.dataset.niche;
+        overlay.querySelector('#niche-hidden').value = niche;
+        overlay.querySelector('#logo-preview').innerHTML = NICHE_ICON[niche] || ICONS.store;
+      });
+    });
+
     overlay.querySelector('#logo-input').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -601,6 +643,8 @@ function currentRoute() {
 function renderAppShell() {
   if (!location.hash) location.hash = '#/dashboard';
   const route = currentRoute();
+
+  document.body.dataset.niche = currentEstablishment.niche || 'Outro';
 
   root.innerHTML = `
     <div class="app-shell">

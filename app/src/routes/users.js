@@ -3,8 +3,21 @@ const bcrypt = require('bcryptjs');
 const store = require('../data/store');
 const { requireLogin, requireEstablishment } = require('../middleware/auth');
 
+const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS) || 12;
+
 const router = express.Router();
 router.use(requireLogin);
+
+// Password strength validation (reused from password.js)
+function validatePasswordStrength(password) {
+  const errors = [];
+  if (password.length < 8) errors.push('A senha deve ter no minimo 8 caracteres.');
+  if (!/[A-Z]/.test(password)) errors.push('A senha deve conter pelo menos uma letra maiuscula.');
+  if (!/[a-z]/.test(password)) errors.push('A senha deve conter pelo menos uma letra minuscula.');
+  if (!/[0-9]/.test(password)) errors.push('A senha deve conter pelo menos um numero.');
+  if (!/[!@#$%^&*(),.?":{}|<>_]/.test(password)) errors.push('A senha deve conter pelo menos um caractere especial.');
+  return errors;
+}
 
 function hasAccessToEstablishment(req, establishmentId) {
   const user = store.findById('users', req.session.userId);
@@ -87,11 +100,16 @@ router.post('/by-establishment/:id', (req, res, next) => {
       return res.status(400).json({ error: 'Email ja cadastrado.' });
     }
 
+    const strengthErrors = validatePasswordStrength(password);
+    if (strengthErrors.length > 0) {
+      return res.status(400).json({ error: strengthErrors.join(' ') });
+    }
+
     const newUser = store.insert('users', {
       id: require('uuid').v4(),
       name: String(name).trim(),
       email: normalizedEmail,
-      passwordHash: bcrypt.hashSync(String(password), 10),
+      passwordHash: bcrypt.hashSync(String(password), BCRYPT_ROUNDS),
       role: role || 'operator',
       allowedEstablishmentIds: [estId],
       createdAt: new Date().toISOString()
