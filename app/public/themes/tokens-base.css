@@ -1,0 +1,154 @@
+/* ============================================================================
+   TOKENS BASE — estruturais, compartilhados por todos os nichos.
+   Cada tema de nicho sobrescreve apenas paleta/tipografia/raio/spacing aqui.
+   Nao tem cor decorativa aqui. Otimizado para mobile-first.
+   ============================================================================ */
+
+:root {
+  /* Layout —Blueprint (igual p/ todos, n muda por tema) */
+  --sidebar-w: 260px;
+  --max-w-content: 1280px;
+  --z-modal: 100;
+  --z-toast: 200;
+
+  /* Spacing scale (overridable por tema, default中性) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radius (override por tema) */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-pill: 999px;
+
+  /* Shadows (override por tema, default neutras) */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-xl: 0 24px 64px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-glow: 0 0 0 1px rgba(var(--accent-rgb,99,102,241), 0.06), 0 8px 32px rgba(var(--accent-rgb,99,102,241), 0.12);
+
+  /* Motion */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-bounce: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Font stack defaults (override por tema) */
+  --font-display: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+
+  /* Type scale */
+  --fs-caption: 12px;
+  --fs-body: 14px;
+  --fs-button: 14px;
+  --fs-h6: 16px;
+  --fs-h5: 18px;
+  --fs-h4: 20px;
+  --fs-h3: 22px;
+  --fs-h2: 28px;
+  --fs-h1: 36px;
+  --fs-display: 56px;
+  --lh-tight: 1.15;
+  --lh-snug: 1.3;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.7;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.12em;
+
+  /* Backgrounds (temas escuros sobrescrevem) */
+  --bg: #f6f7f9;
+  --card-bg: #ffffff;
+  --border: #e8eaed;
+  --text: #0a0a0e;
+  --text-muted: #6b7280;
+  --accent: #0d9488;
+  --accent-dark: #0f766e;
+  --accent-light: #14b8a6;
+  --accent-rgb: 13, 148, 136;
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover: var(--accent-dark);
+  --btn-secondary-bg: #fff;
+  --btn-secondary-hover: #f3f4f6;
+  --input-bg: #fff;
+  --input-border: var(--border);
+  --modal-bg: #fff;
+  --overlay-bg: rgba(15, 15, 20, 0.55);
+  --table-header-bg: #fafbfc;
+  --sidebar-bg: #0f1116;
+  --sidebar-text: #f3f0ec;
+  --sidebar-nav: #a8a4af;
+  --sidebar-border: rgba(255,255,255,0.06);
+  --toast-bg: #1a1b22;
+  --toast-text: #fff;
+
+  /* Paletas validadas para customizacao pelo dono.
+     O dono escolhe 1 destes (em vez de cor livre); backend valida contra esta lista.
+     Cada tema tem a sua (override abaixo). */
+  --palette-allowed: (
+    /* placeholder; tema sobrescreve */
+  );
+
+  /* Estado */
+  --pill-concluido-bg: #dcfce7; --pill-concluido-text: #15803d;
+  --pill-andamento-bg: #dbeafe; --pill-andamento-text: #1d4ed8;
+  --pill-pendente-bg:  #fef9c3; --pill-pendente-text:  #a16207;
+  --pill-cancelado-bg: #fee2e2; --pill-cancelado-text: #b91c1c;
+}
+
+/* Dark mode defaults — cada tema pode refinar */
+[data-theme="dark"] {
+  --bg: #0e0f14;
+  --card-bg: #181a21;
+  --border: #262830;
+  --text: #e8e6e3;
+  --text-muted: #9a9ea8;
+  --input-bg: #181a21;
+  --table-header-bg: #131419;
+  --btn-secondary-bg: #181a21;
+  --btn-secondary-hover: #262830;
+  --modal-bg: #181a21;
+  --overlay-bg: rgba(0,0,0,0.7);
+  --sidebar-bg: #08090c;
+  --toast-bg: #262830;
+  --toast-text: #e8e6e3;
+  --pill-concluido-bg: #052e16; --pill-concluido-text: #4ade80;
+  --pill-andamento-bg: #1e1b3a; --pill-andamento-text: #818cf8;
+  --pill-pendente-bg:  #2a2010; --pill-pendente-text:  #facc15;
+  --pill-cancelado-bg: #2a0e0e; --pill-cancelado-text: #f87171;
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-xl: 0 24px 64px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* Acessibilidade — cumple regra 7 do skill: motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Focus visivel — regra 1 do skill (acessibilidade) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}

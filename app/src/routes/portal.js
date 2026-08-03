@@ -44,11 +44,24 @@ router.get('/:establishmentId', async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    // Loja pausada pelo administrador da plataforma — portal publico fica offline.
+    // Dados nao sao tocados; o dono ainda acessa o painel admin (auth normal).
+    if (est.paused === true) {
+      return res.status(423).json({
+        error: 'Esta loja esta temporariamente pausada. Volte mais tarde.',
+        paused: true,
+        name: est.name
+      });
+    }
     const services = store.query('services', (s) => s.establishmentId === est.id);
     res.json({
       id: est.id,
       name: est.name,
       niche: est.niche,
+      theme: est.theme || resolveDefaultTheme(est.niche),
+      accentOverride: est.accentOverride || null,
+      plan: est.plan || 'free',
+      paused: false,
       description: est.description,
       phone: est.phone,
       address: est.address,
@@ -80,11 +93,30 @@ function getDefaultBusinessHours() {
   return result;
 }
 
+// Map niche legado -> theme slug (mesma logica do scripts/migrate-themes.js).
+// Usado para estabelecimentos antigos ainda sem campo `theme`.
+const NICHE_TO_THEME = {
+  Barbearia: 'servicos',
+  Pizzaria: 'alimentacao',
+  'Lava Jato': 'servicos',
+  'Salao de Beleza': 'servicos',
+  'Doces e Salgados': 'alimentacao',
+  Oficina: 'servicos',
+  Petshop: 'servicos',
+  Outro: 'generico'
+};
+function resolveDefaultTheme(niche) {
+  return NICHE_TO_THEME[niche] || 'generico';
+}
+
 // Get available time slots for a given date
 router.get('/:establishmentId/available-times', validate(availableTimesQuerySchema, 'query'), async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    if (est.paused === true) {
+      return res.status(423).json({ error: 'Esta loja esta pausada.', paused: true });
+    }
 
     const { date } = req.validated;
 
@@ -150,6 +182,10 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    // Defense in depth: mesmo se o front renderizar, nao aceitar agendamento.
+    if (est.paused === true) {
+      return res.status(423).json({ error: 'Esta loja esta pausada e nao aceita agendamentos.', paused: true });
+    }
 
     const { clientName, clientPhone, clientEmail, selectedServices, dateTime, notes } = req.validated;
 

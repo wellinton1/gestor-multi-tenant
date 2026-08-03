@@ -26,7 +26,10 @@ router.post('/login', (req, res) => {
 
   let selectedEstablishmentId = null;
   if (establishmentId) {
-    if (!Array.isArray(user.allowedEstablishmentIds) || !user.allowedEstablishmentIds.includes(establishmentId)) {
+    // Acesso global (allowedEstablishmentIds null/undefined) pode acessar qualquer
+    // estabelecimento. Caso contrario, precisa estar na lista permitida.
+    const isGlobal = !Array.isArray(user.allowedEstablishmentIds);
+    if (!isGlobal && !user.allowedEstablishmentIds.includes(establishmentId)) {
       return res.status(403).json({ error: 'Acesso ao estabelecimento nao autorizado.' });
     }
     selectedEstablishmentId = establishmentId;

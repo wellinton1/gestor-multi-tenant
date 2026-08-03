@@ -32,7 +32,9 @@ const ICONS = {
   sun: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M1.5 12h3M19.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></svg>',
   moon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 109.8 9.8z"/></svg>',
   shield: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 4v6c0 5.5-4 10.6-9 12-5-1.4-9-6.5-9-12V6z"/><path d="M9 12l2 2 4-4"/></svg>',
-  lock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>'
+  lock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>',
+  pause: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
+  play: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 4l14 8-14 8z"/></svg>'
 };
 
 const NICHE_ICON = {
@@ -58,10 +60,24 @@ const NICHE_OPTIONS = [
   { value: 'Outro', icon: ICONS.store, desc: 'Outro tipo de negocio' }
 ];
 
+// Map nicho -> theme slug (mesma logica do backend e migrate-themes.js).
+// Usado em Configuracoes p/ mostrar o tema atual da loja.
+const NICHE_TO_THEME_LEGACY = {
+  Barbearia: 'servicos',
+  Pizzaria: 'alimentacao',
+  'Lava Jato': 'servicos',
+  'Salao de Beleza': 'servicos',
+  'Doces e Salgados': 'alimentacao',
+  Oficina: 'servicos',
+  Petshop: 'servicos',
+  Outro: 'generico'
+};
+
 // ---------- state ----------
 let currentUser = null;
 let currentEstablishment = null;
 let establishments = [];
+let setupNeeded = false;
 
 // ---------- CSRF token helper ----------
 function getCsrfToken() {
@@ -100,6 +116,11 @@ async function api(method, path, body) {
 function formatMoney(v) {
   const n = Number(v) || 0;
   return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function toMapsLink(address) {
+  if (!address) return '';
+  const q = encodeURIComponent(String(address).trim());
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 function formatDateTime(iso) {
   if (!iso) return '-';
@@ -217,6 +238,17 @@ async function boot() {
   } catch (e) {
     currentUser = null;
   }
+  // Se nao ha usuario logado, checa se o setup inicial e necessario.
+  if (!currentUser) {
+    try {
+      const status = await api('GET', '/api/setup/status');
+      setupNeeded = !!(status && status.setupNeeded);
+    } catch (e) {
+      setupNeeded = false;
+    }
+  } else {
+    setupNeeded = false;
+  }
   render();
 }
 
@@ -231,7 +263,10 @@ window.addEventListener('hashchange', () => {
 });
 
 function render() {
-  if (!currentUser) return renderLogin();
+  if (!currentUser) {
+    if (setupNeeded) return renderSetup();
+    return renderLogin();
+  }
 
   // Paginas que nao precisam de estabelecimento selecionado
   if (!currentEstablishment) {
@@ -242,6 +277,68 @@ function render() {
   }
 
   return renderAppShell();
+}
+
+// ================= SETUP INICIAL (primeira abertura da URL) =================
+function renderSetup(errorMsg) {
+  const currentTheme = getTheme();
+  root.innerHTML = `
+    <div class="centered-screen">
+      <button class="top-theme-toggle" id="setup-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
+      <div class="login-card">
+        <div class="brand-icon">${ICONS.shield}</div>
+        <h1>Primeira configuracao</h1>
+        <p class="subtitle">Crie a conta de administrador do sistema</p>
+        ${errorMsg ? `<div class="error-msg">${escapeHtml(errorMsg)}</div>` : ''}
+        <form id="setup-form">
+          <div class="form-field">
+            <label>Nome *</label>
+            <input type="text" name="name" required autofocus autocomplete="name" />
+          </div>
+          <div class="form-field">
+            <label>Email *</label>
+            <input type="email" name="email" required autocomplete="email" />
+          </div>
+          <div class="form-field">
+            <label>Senha *</label>
+            <input type="password" name="password" required minlength="8" autocomplete="new-password" />
+            <div class="password-requirements">
+              <small>Minimo 8 caracteres, 1 maiuscula, 1 minuscula, 1 numero e 1 caractere especial.</small>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Confirmar Senha *</label>
+            <input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-primary">Criar Administrador</button>
+        </form>
+        <div class="hint-box">Esta tela aparece apenas na primeira vez que o sistema e aberto. Apos criar o administrador, voce podera fazer login e configurar seus estabelecimentos.</div>
+      </div>
+    </div>
+  `;
+  document.getElementById('setup-theme-toggle').addEventListener('click', toggleTheme);
+  document.getElementById('setup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const password = fd.get('password');
+    const confirmPassword = fd.get('confirmPassword');
+    if (password !== confirmPassword) {
+      return toast('As senhas nao conferem.', true);
+    }
+    try {
+      const result = await api('POST', '/api/setup', {
+        name: fd.get('name'),
+        email: fd.get('email'),
+        password: password
+      });
+      toast('Administrador criado com sucesso!');
+      setupNeeded = false;
+      currentUser = result.user || await api('GET', '/api/auth/me');
+      render();
+    } catch (err) {
+      renderSetup(err.message);
+    }
+  });
 }
 
 // ================= LOGIN =================
@@ -293,6 +390,7 @@ async function logout() {
   try { await api('POST', '/api/auth/logout'); } catch (e) {}
   currentUser = null;
   currentEstablishment = null;
+  applyEstablishmentTheme(null); // limpa tema ao sair
   // Limpa o hash da URL para evitar acesso a paginas internas
   location.hash = '';
   render();
@@ -301,6 +399,7 @@ async function logout() {
 // ================= ESTABLISHMENT SELECTOR =================
 async function renderSelector() {
   document.body.removeAttribute('data-niche');
+  applyEstablishmentTheme(null); // seletor sempre usa tema base
   root.innerHTML = `<div class="loading-state">Carregando estabelecimentos...</div>`;
   try {
     establishments = await api('GET', '/api/establishments');
@@ -329,21 +428,29 @@ async function renderSelector() {
   `;
 
   const grid = document.getElementById('selector-grid');
+  const canPause = currentUser && currentUser.role === 'admin' &&
+    (currentUser.allowedEstablishmentIds === null || currentUser.allowedEstablishmentIds === undefined);
   grid.innerHTML = establishments.map((est) => `
-    <div class="tenant-card">
+    <div class="tenant-card ${est.paused ? 'tenant-paused' : ''}">
+      ${est.paused ? '<div class="paused-overlay-badge" title="Loja pausada pelo administrador da plataforma">' + ICONS.pause + ' Pausada</div>' : ''}
       <div class="brand-icon" style="margin-bottom:14px;">${est.logoDataUrl ? `<img src="${est.logoDataUrl}"/>` : nicheIcon(est.niche)}</div>
       <div class="niche-tag">${escapeHtml(est.niche)}</div>
       <h3>${escapeHtml(est.name)}</h3>
       <p class="desc">${escapeHtml(est.description || '')}</p>
+      ${est.address ? `<a class="maps-link" href="${toMapsLink(est.address)}" target="_blank" rel="noopener" title="Abrir no Google Maps">${ICONS.globe} ${escapeHtml(est.address)}</a>` : ''}
       <div class="tenant-footer">
         <span>${escapeHtml(est.phone || '')}</span>
         <div class="tenant-actions">
           ${currentUser && currentUser.role === 'admin' ? `
             <button class="access-link" data-id="${est.id}" data-action="login">Acessar ${ICONS.arrowRight}</button>
           ` : `
-            <button class="access-link" data-id="${est.id}">Acessar ${ICONS.arrowRight}</button>
+            <button class="access-link" data-id="${est.id}" ${est.paused ? 'disabled title="Loja pausada — entre como admin da plataforma para reativar"' : ''}>Acessar ${ICONS.arrowRight}</button>
           `}
-          <button class="btn-icon danger delete-tenant-btn" data-id="${est.id}" title="Excluir estabelecimento">${ICONS.trash}</button>
+          ${canPause ? (est.paused
+            ? `<button class="btn-icon btn-resume" data-id="${est.id}" title="Reativar loja (reabrir portal)">${ICONS.play}</button>`
+            : `<button class="btn-icon btn-pause" data-id="${est.id}" title="Pausar loja (fechar portal sem perder dados)">${ICONS.pause}</button>`
+          ) : ''}
+          ${canPause ? `<button class="btn-icon danger delete-tenant-btn" data-id="${est.id}" title="Excluir estabelecimento">${ICONS.trash}</button>` : ''}
         </div>
       </div>
       ${currentUser && (currentUser.role === 'admin' || currentUser.allowedEstablishmentIds === null) ? `<a class="create-user-link" data-id="${est.id}" href="#">Criar acesso</a>` : ''}
@@ -390,6 +497,40 @@ async function renderSelector() {
       }
     });
   });
+  grid.querySelectorAll('.btn-pause').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const est = establishments.find((item) => item.id === id);
+      if (!est) return;
+      const ok = window.confirm(
+        `Pausar "${est.name}"?\n\n` +
+        `O portal publico de clientes (${"'" + est.name + "'"}) fica offline imediatamente, e nenhum cliente podera agendar. ` +
+        `Os dados (agendamentos, clientes, servicos) nao sao apagados. ` +
+        `Para reabrir, clique no botao de play.\n\n` +
+        `Continuar?`
+      );
+      if (!ok) return;
+      try {
+        await api('PUT', `/api/establishments/${id}/pause`);
+        toast('Loja "' + est.name + '" pausada. Portal publico offline.');
+        await renderSelector();
+      } catch (err) { toast(err.message, true); }
+    });
+  });
+  grid.querySelectorAll('.btn-resume').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const est = establishments.find((item) => item.id === id);
+      if (!est) return;
+      try {
+        await api('PUT', `/api/establishments/${id}/resume`);
+        toast('Loja "' + est.name + '" reativada. Portal publico volta a aceitar agendamentos.');
+        await renderSelector();
+      } catch (err) { toast(err.message, true); }
+    });
+  });
   grid.querySelectorAll('.create-user-link').forEach((btn) => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -428,6 +569,7 @@ function renderSelectorPublic() {
         <div class="niche-tag">${escapeHtml(est.niche)}</div>
         <h3>${escapeHtml(est.name)}</h3>
         <p class="desc">${escapeHtml(est.description || '')}</p>
+        ${est.address ? `<a class="maps-link" href="${toMapsLink(est.address)}" target="_blank" rel="noopener" title="Abrir no Google Maps">${ICONS.globe} ${escapeHtml(est.address)}</a>` : ''}
         <div class="tenant-footer">
           <span>${escapeHtml(est.phone || '')}</span>
           <div class="tenant-actions">
@@ -645,6 +787,8 @@ function renderAppShell() {
   const route = currentRoute();
 
   document.body.dataset.niche = currentEstablishment.niche || 'Outro';
+  // Aplica o tema premium da loja selecionada no painel admin.
+  applyEstablishmentTheme(currentEstablishment);
 
   root.innerHTML = `
     <div class="app-shell">
@@ -680,6 +824,7 @@ function renderAppShell() {
     switchBtn.addEventListener('click', async () => {
       await api('POST', '/api/establishments/clear-selection');
       currentEstablishment = null;
+      applyEstablishmentTheme(null); // limpa tema ao voltar ao seletor
       location.hash = '';
       render();
     });
@@ -701,6 +846,68 @@ function renderAppShell() {
 }
 
 function mainEl() { return document.getElementById('main-content'); }
+
+// ---------- Theme (admin SPA) ----------
+// Injeta só o <link> do tema da loja atual. Remove links de tema anteriores.
+// Isso garante que o painel admin tambem herda o design premium do nicho.
+function applyEstablishmentTheme(est) {
+  // Remove tema anterior (se houver)
+  document.querySelectorAll('link[data-admin-theme]').forEach((l) => l.remove());
+  if (!est) {
+    document.body.removeAttribute('data-theme');
+    document.documentElement.style.removeProperty('--accent');
+    return;
+  }
+  const theme = est.theme || (NICHE_TO_THEME_LEGACY[est.niche] || 'generico');
+  if (theme && theme !== 'generico') {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/themes/' + encodeURIComponent(theme) + '.css';
+    link.dataset.adminTheme = theme;
+    document.head.appendChild(link);
+  }
+  document.body.dataset.theme = theme;
+  // Se a loja tem accentOverride, aplica — em vez de ler do CSS do tema,
+  // pegamos a cor real do endpoint de paleta p/ preview imediato.
+  if (est.accentOverride) {
+    api('GET', `/api/establishments/themes/${encodeURIComponent(theme)}/palette`)
+      .then((res) => {
+        const found = res.palette && res.palette.find((p) => p.name === est.accentOverride);
+        if (found) {
+          document.documentElement.style.setProperty('--accent', found.color);
+          // Atualiza rgb tambem (apenas melhor esforço)
+          const rgb = hexToRgb(found.color);
+          if (rgb) {
+            document.documentElement.style.setProperty('--accent-rgb', rgb);
+            document.documentElement.style.setProperty('--accent-dark', shade(found.color, -0.15));
+            document.documentElement.style.setProperty('--accent-light', shade(found.color, 0.15));
+          }
+        }
+      })
+      .catch(() => {});
+  } else {
+    document.documentElement.style.removeProperty('--accent');
+    document.documentElement.style.removeProperty('--accent-rgb');
+  }
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{6})$/i.exec(hex);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+
+// Clareira/escurece um hex por fator (-0.2 a +0.2).
+function shade(hex, factor) {
+  const m = /^#?([a-f\d]{6})$/i.exec(hex || '');
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * (1 + factor))));
+  const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * (1 + factor))));
+  const b = Math.max(0, Math.min(255, Math.round((n & 255) * (1 + factor))));
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
 
 // ---------- Dashboard ----------
 async function renderDashboardPage() {
@@ -1364,18 +1571,48 @@ function openServiceModal(svc) {
 }
 
 // ---------- Configuracoes ----------
-function renderConfiguracoesPage() {
-  const est = currentEstablishment;
+async function renderConfiguracoesPage() {
+  // Recarrega o estabelecimento p/ pegar campos novos (theme, accentOverride, plan, themePalette).
+  // Evita dados stale se a loja mudou desde o login.
+  try {
+    const fresh = await api('GET', '/api/establishments/current');
+    if (fresh) currentEstablishment = { ...currentEstablishment, ...fresh };
+    est = currentEstablishment;
+  } catch (e) { /* mantem o que tem */ }
+  let est = currentEstablishment;
   const portalUrl = `${location.origin}/loja/${est.id}`;
   const DAY_NAMES = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
   const hours = est.businessHours || {};
+  const currentTheme = est.theme || (est.niche ? NICHE_TO_THEME_LEGACY[est.niche] : 'generico');
+  const currentAccent = est.accentOverride || null;
+  const currentPlan = est.plan || 'free';
+  const isPro = currentPlan === 'pro';
+  const palette = Array.isArray(est.themePalette) && est.themePalette.length > 0
+    ? est.themePalette
+    : await (async () => { try { const r = await api('GET', `/api/establishments/themes/${encodeURIComponent(currentTheme)}/palette`); return r.palette || []; } catch (e) { return []; } })();
+
   mainEl().innerHTML = `
     <div class="page-header">
       <div><h1>Configuracoes</h1><p>Gerencie as informacoes de ${escapeHtml(est.name)}</p></div>
     </div>
     <div class="settings-banner">
       <div class="brand-icon">${est.logoDataUrl ? `<img src="${est.logoDataUrl}"/>` : nicheIcon(est.niche)}</div>
-      <div><h2>${escapeHtml(est.name)}</h2><p>${escapeHtml(est.niche)}</p></div>
+      <div>
+        <h2>${escapeHtml(est.name)}</h2>
+        <p>
+          ${escapeHtml(est.niche)} · Tema <strong>${escapeHtml(currentTheme)}</strong>
+          · Plano <span class="plan-badge ${isPro ? 'plan-pro' : 'plan-free'}">${isPro ? 'PRO' : 'FREE'}</span>
+          ${est.paused ? ' · <span class="paused-badge" style="color:#ef4444;font-weight:600;">' + ICONS.pause + ' Pausada</span>' : ''}
+        </p>
+      </div>
+      ${currentUser && currentUser.role === 'admin' && (currentUser.allowedEstablishmentIds === null || currentUser.allowedEstablishmentIds === undefined) ? `
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          ${est.paused
+            ? `<button type="button" class="btn btn-secondary" id="btn-resume-settings" style="display:flex;align-items:center;gap:6px;">${ICONS.play} Reativar</button>`
+            : `<button type="button" class="btn btn-warning" id="btn-pause-settings" style="display:flex;align-items:center;gap:6px;">${ICONS.pause} Pausar loja</button>`
+          }
+        </div>
+      ` : ''}
     </div>
     <div class="card settings-card">
       <form id="settings-form">
@@ -1383,12 +1620,59 @@ function renderConfiguracoesPage() {
         <div class="form-field"><label>Descricao</label><textarea name="description">${escapeHtml(est.description)}</textarea></div>
         <div class="form-grid">
           <div class="form-field"><label>${ICONS.phone} Telefone</label><input type="text" name="phone" value="${escapeHtml(est.phone)}" /></div>
-          <div class="form-field"><label>Endereco</label><input type="text" name="address" value="${escapeHtml(est.address)}" /></div>
+          <div class="form-field">
+            <label>Endereco</label>
+            <input type="text" name="address" id="settings-address-input" value="${escapeHtml(est.address)}" placeholder="Rua, numero, cidade" />
+            ${est.address ? `<a class="maps-link-inline" href="${toMapsLink(est.address)}" target="_blank" rel="noopener" title="Abrir no Google Maps">${ICONS.globe} Ver no Maps</a>` : ''}
+          </div>
         </div>
         <div style="text-align:right;">
           <button type="submit" class="btn btn-primary">Salvar Alteracoes</button>
         </div>
       </form>
+    </div>
+    <div class="card settings-card">
+      <h3 style="margin:0 0 4px 0;font-size:17px;">Aparência</h3>
+      <p style="color:var(--text-muted);font-size:13px;margin:0 0 18px 0;">Personalize a identidade visual do seu site. As cores disponíveis já foram validadas para manter o acabamento premium.</p>
+      <div class="appearance-row">
+        <div class="appearance-label">
+          <strong>Tema do nicho</strong>
+          <span class="hint">Definido automaticamente quando você escolhe o nicho: <code>${escapeHtml(currentTheme)}</code></span>
+        </div>
+        <span class="theme-chip">${escapeHtml(currentTheme)}</span>
+      </div>
+      <div class="appearance-row">
+        <div class="appearance-label">
+          <strong>Cor de destaque${!isPro ? ' <span class="pro-lock" title="Disponível no plano PRO">PRO</span>' : ''}</strong>
+          <span class="hint">Escolha uma das cores ${palette.length} que combinam com o tema. Cor livre não é permitida — isso evita contrastes quebrados.</span>
+        </div>
+        <div class="palette-grid" id="palette-grid" data-locked="${isPro ? 'false' : 'true'}">
+          ${palette.length === 0 ? '<span class="hint">Paleta indisponível.</span>' : palette.map((p) => `
+            <button type="button"
+                    class="palette-swatch ${currentAccent === p.name ? 'selected' : ''}"
+                    data-name="${escapeHtml(p.name)}"
+                    data-color="${escapeHtml(p.color)}"
+                    title="${escapeHtml(p.name)} (${escapeHtml(p.color)})"
+                    ${isPro ? '' : 'disabled'}>
+              <span class="swatch-color" style="background:${escapeHtml(p.color)};"></span>
+              <span class="swatch-label">${escapeHtml(p.name)}</span>
+            </button>
+          `).join('')}
+        </div>
+        ${!isPro ? `
+          <p class="upgrade-hint">
+            ${ICONS.lock || ''} Faça upgrade para o plano <strong>PRO</strong> para escolher a cor de destaque.
+            <a class="link-btn" href="#" id="upgrade-plan-btn">Saber mais</a>
+          </p>
+        ` : ''}
+      </div>
+      <div class="appearance-row">
+        <div class="appearance-label">
+          <strong>Pré-visualização</strong>
+          <span class="hint">Veja como fica no seu portal público.</span>
+        </div>
+        <a href="${portalUrl}" target="_blank" rel="noopener" class="btn btn-secondary">${ICONS.globe} Abrir portal</a>
+      </div>
     </div>
     <div class="card settings-card">
       <h3 style="margin:0 0 16px 0;font-size:17px;">Horario de Funcionamento</h3>
@@ -1436,6 +1720,39 @@ function renderConfiguracoesPage() {
     </div>
   `;
   document.getElementById('open-portal-btn').addEventListener('click', () => window.open(portalUrl, '_blank'));
+  // Pausar / Reativar (somente admin da plataforma)
+  const btnPause = document.getElementById('btn-pause-settings');
+  const btnResume = document.getElementById('btn-resume-settings');
+  if (btnPause) {
+    btnPause.addEventListener('click', async () => {
+      const ok = window.confirm(
+        `Pausar "${est.name}"?\n\n` +
+        `O portal publico de clientes ficara offline imediatamente, e nenhum cliente podera agendar. ` +
+        `Os dados (agendamentos, clientes, servicos) nao sao apagados. ` +
+        `Para reabrir, use o botao "Reativar" aqui ou no seletor de lojas.\n\n` +
+        `Continuar?`
+      );
+      if (!ok) return;
+      try {
+        await api('PUT', `/api/establishments/${est.id}/pause`);
+        currentEstablishment.paused = true;
+        currentEstablishment.pausedAt = new Date().toISOString();
+        toast('Loja "' + est.name + '" pausada. Portal publico offline.');
+        renderConfiguracoesPage();
+      } catch (err) { toast(err.message, true); }
+    });
+  }
+  if (btnResume) {
+    btnResume.addEventListener('click', async () => {
+      try {
+        await api('PUT', `/api/establishments/${est.id}/resume`);
+        currentEstablishment.paused = false;
+        currentEstablishment.pausedAt = null;
+        toast('Loja "' + est.name + '" reativada. Portal publico volta a aceitar agendamentos.');
+        renderConfiguracoesPage();
+      } catch (err) { toast(err.message, true); }
+    });
+  }
   document.getElementById('settings-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -1449,8 +1766,91 @@ function renderConfiguracoesPage() {
   });
   document.getElementById('save-hours-btn').addEventListener('click', saveBusinessHours);
   document.getElementById('new-user-btn').addEventListener('click', openNewUserModal);
+  setupAppearanceUI();
   loadEstablishmentUsers();
   setupBusinessHoursUI();
+}
+
+// ---------- Aparência (seletor de cor de destaque) ----------
+function setupAppearanceUI() {
+  const paletteGrid = document.getElementById('palette-grid');
+  if (paletteGrid) {
+    paletteGrid.querySelectorAll('.palette-swatch').forEach((sw) => {
+      sw.addEventListener('click', async () => {
+        if (sw.disabled) return;
+        const name = sw.dataset.name;
+        const color = sw.dataset.color;
+        // Marca visualmente
+        paletteGrid.querySelectorAll('.palette-swatch').forEach((s) => s.classList.remove('selected'));
+        sw.classList.add('selected');
+        // Aplica no preview imediato (atualiza a CSS var --accent, etc.)
+        document.documentElement.style.setProperty('--accent', color);
+        // Persiste no backend
+        try {
+          currentEstablishment = await api('PUT', `/api/establishments/${currentEstablishment.id}`, { accentOverride: name });
+          toast('Cor de destaque atualizada.');
+        } catch (err) {
+          toast(err.message, true);
+          // Reverte seleção visual
+          paletteGrid.querySelectorAll('.palette-swatch').forEach((s) => s.classList.remove('selected'));
+          const original = currentEstablishment.accentOverride;
+          if (original) paletteGrid.querySelector(`.palette-swatch[data-name="${original}"]`)?.classList.add('selected');
+        }
+      });
+    });
+  }
+  const upgradeBtn = document.getElementById('upgrade-plan-btn');
+  if (upgradeBtn) {
+    upgradeBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openUpgradePlanModal();
+    });
+  }
+}
+
+function openUpgradePlanModal() {
+  // Admin da plataforma (acesso global) pode ativar o plano direto
+  const canActivate = currentUser && currentUser.role === 'admin' &&
+    (currentUser.allowedEstablishmentIds === null || currentUser.allowedEstablishmentIds === undefined);
+  const actions = canActivate
+    ? `<button type="button" class="btn btn-primary" id="activate-pro-btn">Ativar PRO agora</button>
+       <button type="button" class="btn btn-secondary" id="close-upgrade">Fechar</button>`
+    : `<button type="button" class="btn btn-secondary" id="close-upgrade">Entendi</button>`;
+  const bodyHtml = `
+    <div class="upgrade-modal">
+      <div class="upgrade-card-pro">
+        <div class="upgrade-badge">PRO</div>
+        <h3>Plano PRO</h3>
+        <ul class="upgrade-features">
+          <li>Cor de destaque customizável (5 cores premium por tema)</li>
+          <li>Usuários ilimitados (plano FREE limita 1 operador)</li>
+          <li>Clientes ilimitados (plano FREE limita 50)</li>
+          <li>Suporte prioritário</li>
+        </ul>
+        ${canActivate
+          ? '<p class="upgrade-note">Como administrador da plataforma, você pode ativar o PRO para esta loja instantaneamente.</p>'
+          : '<p class="upgrade-note">Para ativar, contate o administrador da plataforma.</p>'}
+      </div>
+      <div class="modal-actions">${actions}</div>
+    </div>
+  `;
+  showModal('Upgrade de plano', bodyHtml, (overlay) => {
+    overlay.querySelector('#close-upgrade')?.addEventListener('click', closeModal);
+    const activate = overlay.querySelector('#activate-pro-btn');
+    if (activate) {
+      activate.addEventListener('click', async () => {
+        try {
+          await api('PUT', `/api/establishments/${currentEstablishment.id}/plan`, { plan: 'pro' });
+          currentEstablishment.plan = 'pro';
+          closeModal();
+          toast('Plano PRO ativado!');
+          renderConfiguracoesPage();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      });
+    }
+  });
 }
 
 function setupBusinessHoursUI() {
@@ -1497,16 +1897,24 @@ async function loadEstablishmentUsers() {
     }
     container.innerHTML = `
       <table class="mini-table">
-        <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Acesso</th><th></th></tr></thead>
         <tbody>
-          ${users.map((user) => `
+          ${users.map((user) => {
+            const isGlobal = user.allowedEstablishmentIds === null || user.allowedEstablishmentIds === undefined;
+            const accessBadge = isGlobal
+              ? '<span class="access-badge access-global" title="Acesso a todos os estabelecimentos">Global</span>'
+              : '<span class="access-badge access-local" title="Acesso somente a este estabelecimento">Este estab.</span>';
+            const canDelete = user.id !== currentUser.id && !isGlobal;
+            return `
             <tr>
               <td>${escapeHtml(user.name)}${user.id === currentUser.id ? ' <span class="tag">Voce</span>' : ''}</td>
               <td>${escapeHtml(user.email)}</td>
-              <td>${escapeHtml(user.role || 'operator')}</td>
-              <td>${user.id === currentUser.id ? '' : `<button class="btn btn-secondary danger delete-user-btn" data-id="${user.id}">${ICONS.trash}</button>`}</td>
+              <td><span class="role-badge ${user.role === 'admin' ? '' : 'func'}">${escapeHtml(user.role || 'operator')}</span></td>
+              <td>${accessBadge}</td>
+              <td>${canDelete ? `<button class="btn-icon danger delete-user-btn" data-id="${user.id}" title="Remover deste estabelecimento">${ICONS.trash}</button>` : ''}</td>
             </tr>
-          `).join('')}
+          `;
+          }).join('')}
         </tbody>
       </table>
     `;
@@ -1671,57 +2079,71 @@ async function loadAdminUsers() {
       api('GET', '/api/establishments')
     ]);
 
-    container.innerHTML = `
-      <table class="mini-table">
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th>Email</th>
-            <th>Perfil</th>
-            <th>Acesso</th>
-            <th>Ultima Troca de Senha</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${users.map((user) => {
-            let accessText = '';
-            if (user.allowedEstablishmentIds === null) {
-              accessText = '<span class="pill" style="background:#e3f2fd;color:#0d47a1;border:none;">Global</span>';
-            } else {
-              const matchedNames = ests
-                .filter((est) => user.allowedEstablishmentIds.includes(est.id))
-                .map((est) => est.name);
-              accessText = matchedNames.length > 0 
-                ? matchedNames.map(name => `<span class="pill" style="background:var(--bg-muted);color:var(--text-color);margin-right:4px;">${escapeHtml(name)}</span>`).join('') 
-                : '<span class="pill pill-cancelado">Nenhum</span>';
-            }
+    const isGlobal = (u) => u.allowedEstablishmentIds === null || u.allowedEstablishmentIds === undefined;
 
-            return `
+    container.innerHTML = `
+      <div class="users-table-wrap">
+        <table class="mini-table users-table">
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Perfil</th>
+              <th>Acesso</th>
+              <th>Ultima troca de senha</th>
+              <th class="col-actions">Acoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${users.map((user) => {
+              const initials = (user.name || user.email || '?').trim().charAt(0).toUpperCase();
+              const globalUser = isGlobal(user);
+              let accessCell;
+              if (globalUser) {
+                accessCell = '<span class="access-badge access-global" title="Acesso a todos os estabelecimentos">Global</span>';
+              } else {
+                const matchedNames = ests
+                  .filter((est) => user.allowedEstablishmentIds.includes(est.id))
+                  .map((est) => est.name);
+                accessCell = matchedNames.length > 0
+                  ? `<div class="access-chips">${matchedNames.map(name => `<span class="access-chip" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`).join('')}</div>`
+                  : '<span class="access-badge access-none" title="Sem acesso a estabelecimentos">Nenhum</span>';
+              }
+
+              return `
               <tr>
-                <td class="cell-strong">${escapeHtml(user.name)}</td>
-                <td>${escapeHtml(user.email)}</td>
+                <td>
+                  <div class="user-cell">
+                    <div class="user-avatar">${escapeHtml(initials)}</div>
+                    <div class="user-meta">
+                      <div class="user-name">${escapeHtml(user.name)}${user.id === currentUser.id ? ' <span class="tag">Voce</span>' : ''}</div>
+                      <div class="user-email">${escapeHtml(user.email)}</div>
+                    </div>
+                  </div>
+                </td>
                 <td><span class="role-badge ${user.role === 'admin' ? '' : 'func'}">${escapeHtml(user.role)}</span></td>
-                <td>${accessText}</td>
+                <td>${accessCell}</td>
                 <td class="cell-muted">${user.passwordChangedAt ? formatDateTime(user.passwordChangedAt) : '<span class="pill pill-pendente">Nunca</span>'}</td>
-                <td style="display:flex;gap:6px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary reset-pwd-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}">
-                    ${ICONS.lock} Resetar
-                  </button>
-                  <button class="btn btn-secondary associate-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" data-allowed='${JSON.stringify(user.allowedEstablishmentIds)}'>
-                    ${ICONS.globe} Associar
-                  </button>
-                  ${user.id === currentUser.id ? '' : `
-                    <button class="btn btn-secondary danger delete-user-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}">
-                      ${ICONS.trash} Excluir
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <button class="action-btn action-btn-blue reset-pwd-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Resetar senha">
+                      ${ICONS.lock}
                     </button>
-                  `}
+                    <button class="action-btn action-btn-violet associate-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" data-allowed='${JSON.stringify(user.allowedEstablishmentIds)}' title="Associar estabelecimentos">
+                      ${ICONS.globe}
+                    </button>
+                    ${user.id === currentUser.id ? '<span class="action-btn-placeholder" title="Voce nao pode excluir a si mesmo"></span>' : `
+                      <button class="action-btn action-btn-red delete-user-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Excluir usuario">
+                        ${ICONS.trash}
+                      </button>
+                    `}
+                  </div>
                 </td>
               </tr>
             `;
-          }).join('')}
-        </tbody>
-      </table>
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
     `;
 
     container.querySelectorAll('.reset-pwd-btn').forEach((btn) => {
@@ -1739,10 +2161,10 @@ async function loadAdminUsers() {
 
     container.querySelectorAll('.delete-user-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm(`Deseja realmente excluir o usuário "${btn.dataset.name}" do sistema?`)) return;
+        if (!confirm(`Deseja realmente excluir o usuario "${btn.dataset.name}" do sistema?`)) return;
         try {
           await api('DELETE', `/api/password/admin-delete/${btn.dataset.id}`);
-          toast('Usuário excluído com sucesso!');
+          toast('Usuario excluido com sucesso!');
           loadAdminUsers();
         } catch (err) {
           toast(err.message, true);
@@ -1757,60 +2179,104 @@ async function loadAdminUsers() {
 
 function openAssociateModal(userId, userName, currentAllowedIds) {
   api('GET', '/api/establishments').then((ests) => {
-    const isGlobal = currentAllowedIds === null;
+    const isGlobal = currentAllowedIds === null || currentAllowedIds === undefined;
     const bodyHtml = `
       <form id="associate-form">
-        <p>Associar estabelecimentos para: <strong>${escapeHtml(userName)}</strong></p>
-        
-        <div class="form-field" style="margin-bottom:14px;">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input type="checkbox" id="global-access-chk" ${isGlobal ? 'checked' : ''} />
-            <strong>Acesso Global (Todos os estabelecimentos)</strong>
-          </label>
+        <div class="associate-user-banner">
+          <div class="associate-avatar">${escapeHtml((userName || '?').trim().charAt(0).toUpperCase())}</div>
+          <div>
+            <div class="associate-user-name">${escapeHtml(userName)}</div>
+            <div class="associate-user-hint">Defina quais estabelecimentos este usuario podera acessar.</div>
+          </div>
         </div>
-        
-        <div id="establishments-checklist-container" style="${isGlobal ? 'display:none;' : ''}">
-          <label style="display:block;margin-bottom:8px;font-weight:600;">Selecione os estabelecimentos permitidos:</label>
-          <div style="max-height: 200px; overflow-y: auto; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: column; gap: 8px;">
+
+        <label class="associate-global-toggle">
+          <input type="checkbox" id="global-access-chk" ${isGlobal ? 'checked' : ''} />
+          <span class="associate-global-track"><span class="associate-global-thumb"></span></span>
+          <span class="associate-global-text">
+            <strong>Acesso Global</strong>
+            <em>Este usuario podera acessar todos os estabelecimentos do sistema.</em>
+          </span>
+        </label>
+
+        <div class="associate-divider"></div>
+
+        <div id="establishments-checklist-container" class="associate-checklist-wrap" style="${isGlobal ? 'display:none;' : ''}">
+          <div class="associate-checklist-header">
+            <span>Estabelecimentos permitidos</span>
+            <div class="associate-checklist-actions">
+              <button type="button" class="link-btn" id="select-all-est">Selecionar todos</button>
+              <button type="button" class="link-btn" id="clear-all-est">Limpar</button>
+            </div>
+          </div>
+          <div class="associate-checklist">
             ${ests.map((est) => {
               const checked = Array.isArray(currentAllowedIds) && currentAllowedIds.includes(est.id);
               return `
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <label class="associate-est-item ${checked ? 'checked' : ''}">
                   <input type="checkbox" class="est-chk" value="${est.id}" ${checked ? 'checked' : ''} />
-                  <span>${escapeHtml(est.name)} (${escapeHtml(est.niche)})</span>
+                  <div class="associate-est-icon">${est.logoDataUrl ? `<img src="${est.logoDataUrl}"/>` : nicheIcon(est.niche)}</div>
+                  <div class="associate-est-info">
+                    <div class="associate-est-name">${escapeHtml(est.name)}</div>
+                    <div class="associate-est-niche">${escapeHtml(est.niche)}</div>
+                  </div>
                 </label>
               `;
             }).join('')}
           </div>
         </div>
-        
-        <div class="modal-actions" style="margin-top:20px;">
+
+        <div class="modal-actions">
           <button type="button" class="btn btn-secondary" id="cancel-associate">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Salvar Associação</button>
+          <button type="submit" class="btn btn-primary">Salvar Associacao</button>
         </div>
       </form>
     `;
     showModal('Associar Estabelecimentos', bodyHtml, (overlay) => {
       const globalChk = overlay.querySelector('#global-access-chk');
       const checklistContainer = overlay.querySelector('#establishments-checklist-container');
-      
+
+      function refreshItemStates() {
+        overlay.querySelectorAll('.associate-est-item').forEach((item) => {
+          const chk = item.querySelector('.est-chk');
+          item.classList.toggle('checked', chk.checked);
+        });
+      }
+
       globalChk.addEventListener('change', () => {
         checklistContainer.style.display = globalChk.checked ? 'none' : 'block';
       });
-      
+
+      overlay.querySelector('#select-all-est').addEventListener('click', () => {
+        overlay.querySelectorAll('.est-chk').forEach((c) => { c.checked = true; });
+        refreshItemStates();
+      });
+      overlay.querySelector('#clear-all-est').addEventListener('click', () => {
+        overlay.querySelectorAll('.est-chk').forEach((c) => { c.checked = false; });
+        refreshItemStates();
+      });
+      overlay.querySelectorAll('.est-chk').forEach((c) => {
+        c.addEventListener('change', refreshItemStates);
+      });
+
       overlay.querySelector('#cancel-associate').addEventListener('click', closeModal);
       overlay.querySelector('#associate-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         let allowedEstablishmentIds = null;
         if (!globalChk.checked) {
           allowedEstablishmentIds = Array.from(overlay.querySelectorAll('.est-chk:checked')).map((el) => el.value);
+          // Bloqueia salvar sem selecao (evita lockout do operador)
+          if (allowedEstablishmentIds.length === 0) {
+            toast('Selecione ao menos 1 estabelecimento ou ative "Acesso Global". Senao o usuario nao conseguira fazer login.', true);
+            return;
+          }
         }
-        
+
         try {
           await api('PUT', `/api/password/admin-associate/${userId}`, { allowedEstablishmentIds });
           closeModal();
-          toast('Associação atualizada com sucesso!');
+          toast('Associacao atualizada com sucesso!');
           loadAdminUsers();
         } catch (err) {
           toast(err.message, true);

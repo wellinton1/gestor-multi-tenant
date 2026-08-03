@@ -1,0 +1,149 @@
+/* ============================================================================
+   TEMA: ELETRONICOS — dark-first, premium gadget, mono eyebrows.
+   Identidade: Apple/Teenage Engineering, gadget, contraste alto.
+   Nao usar: serifas, sombras fofas, cantos super arredondados.
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root,
+body[data-theme="eletronicos"] {
+  /* Tipografia — sans moderna + mono p/ detalhes */
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+  --font-body: "Space Grotesk", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Type scale — um pouco maior, pesado */
+  --fs-display: 64px;
+  --fs-h1: 40px;
+  --fs-h2: 28px;
+  --fs-h3: 22px;
+  --fs-body: 14px;
+  --lh-tight: 1.1;
+  --lh-snug: 1.3;
+  --lh-normal: 1.55;
+  --tracking-tight: -0.03em;
+  --tracking-caps: 0.08em;
+
+  /* Dark-first — assinatura de gadget premium */
+  --bg: #0a0d0c;
+  --card-bg: #13171a;
+  --border: #1f262a;
+  --text: #e8f2ee;
+  --text-muted: #7a8a85;
+
+  /* Accent verde-fosforo — NAO roxo/azul, verde-tech */
+  --accent: #10b981;
+  --accent-dark: #059669;
+  --accent-light: #34d399;
+  --accent-rgb: 16, 185, 129;
+
+  /* Cantos afiados — engenharia, nao brinquedo */
+  --radius-xs: 0px;
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 12px;
+
+  /* Spacing compacto (densidade dashboard) */
+  --space-1: 2px;
+  --space-2: 6px;
+  --space-3: 10px;
+  --space-4: 14px;
+  --space-5: 18px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 48px;
+  --space-12: 64px;
+
+  /* Shadows — sombra "glow" verde sutil, nao sombra cinza */
+  --shadow-xs: 0 0 0 1px rgba(255,255,255,0.02);
+  --shadow-sm: 0 1px 0 rgba(255,255,255,0.04);
+  --shadow-md: 0 1px 0 rgba(255,255,255,0.04), 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 1px 0 rgba(255,255,255,0.05), 0 12px 40px rgba(0,0,0,0.5);
+  --shadow-xl: 0 24px 64px rgba(0,0,0,0.6);
+  --shadow-glow: 0 0 0 1px rgba(var(--accent-rgb), 0.25), 0 0 24px rgba(var(--accent-rgb), 0.18);
+
+  /* Sidebar — preto mate, accent verde line */
+  --sidebar-bg: #050707;
+  --sidebar-text: #e8f2ee;
+  --sidebar-nav: #7a8a85;
+  --sidebar-border: rgba(16, 185, 129, 0.1);
+
+  --btn-primary-bg: #10b981;
+  --btn-primary-hover: #059669;
+  --btn-secondary-bg: #13171a;
+  --btn-secondary-hover: #1f262a;
+  --input-bg: #13171a;
+  --input-border: #1f262a;
+  --modal-bg: #13171a;
+  --overlay-bg: rgba(0,0,0,0.85);
+  --table-header-bg: #0a0d0c;
+
+  /* Eyebrow mono — assinatura do tema */
+  --eyebrow-font: var(--font-mono);
+
+  /* Paleta p/ customizacao (verdes和相关, nunca livre) */
+  --palette-allowed:
+    "green"  #10b981,
+    "cyan"   #06b6d4,
+    "lime"   #84cc16,
+    "amber"  #f59e0b,
+    "ink"    #0a0d0c;
+  --accent-override-default: "green";
+}
+
+/* Light mode (emergencia p/ tema eletronicos em modo claro) */
+body[data-theme="eletronicos"][data-theme-appearance="light"] {
+  --bg: #f5f7f6;
+  --card-bg: #ffffff;
+  --border: #d6dde0;
+  --text: #0a0d0c;
+  --text-muted: #6b7872;
+  --btn-secondary-bg: #fff;
+  --input-bg: #fff;
+  --table-header-bg: #f0f3f1;
+  --sidebar-bg: #050707;
+  --sidebar-text: #e8f2ee;
+}
+
+/* Microinteracoes — hover com "scan line" sutil */
+body[data-theme="eletronicos"] .btn {
+  font-family: var(--font-body);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius);
+  transition: all var(--transition-fast);
+}
+body[data-theme="eletronicos"] .btn-primary:hover {
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+
+body[data-theme="eletronicos"] h1,
+body[data-theme="eletronicos"] h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+body[data-theme="eletronicos"] .niche-tag {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+/* Eyebrow mono no header de cartao — assinatura */
+body[data-theme="eletronicos"] .card-header,
+body[data-theme="eletronicos"] .page-header h1 + p::before {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}

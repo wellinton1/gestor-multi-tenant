@@ -31,6 +31,7 @@ const portalRoutes = require('./src/routes/portal');
 const usersRoutes = require('./src/routes/users');
 const passwordRoutes = require('./src/routes/password');
 const securityRoutes = require('./src/routes/security');
+const setupRoutes = require('./src/routes/setup');
 
 const app = express();
 const DEFAULT_PORT = Number(process.env.PORT) || 3000;
@@ -163,7 +164,7 @@ app.use(
 // Gera token CSRF e armazena em cookie acessivel via JS
 app.use((req, res, next) => {
   // Pula CSRF para rotas de autenticacao (login nao precisa de CSRF)
-  if (req.path.startsWith('/api/auth')) {
+  if (req.path.startsWith('/api/auth') || req.path.startsWith('/api/setup')) {
     return next();
   }
 
@@ -216,6 +217,7 @@ runSeed().catch((err) => {
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/setup', authLimiter, setupRoutes);
 app.use('/api/password', require('./src/middleware/auth').requireLogin, passwordLimiter, passwordRoutes);
 app.use('/api/establishments', establishmentsRoutes);
 app.use('/api/clients', clientsRoutes);
@@ -252,9 +254,11 @@ app.get('*', (req, res) => {
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0" />
+<meta name="theme-color" content="#ffffff" />
 <title>Painel de Gestao</title>
 <link rel="stylesheet" href="/css/style.css" nonce="${nonce}" />
+<link rel="stylesheet" href="/themes/tokens-base.css" nonce="${nonce}" />
 </head>
 <body>
 <div id="root"></div>

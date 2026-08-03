@@ -65,7 +65,25 @@ async function boot() {
     root.innerHTML = `<div class="empty-state">Estabelecimento nao encontrado.</div>`;
     return;
   }
+  applyTheme();
   renderPage();
+}
+
+// Aplica o tema premium do nicho da loja. So carrega o CSS daquele tema.
+function applyTheme() {
+  const theme = establishment && establishment.theme ? establishment.theme : 'generico';
+  // tokens-base e sempre carregado primeiro (HTML ja linka).
+  // Aqui injetamos so o tema ativo.
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = '/themes/' + encodeURIComponent(theme) + '.css';
+  link.dataset.themeAsset = theme;
+  document.head.appendChild(link);
+  document.body.dataset.theme = theme;
+  // accentOverride (validado no backend contra paleta do tema).
+  if (establishment && establishment.accentOverride) {
+    document.body.dataset.accentOverride = establishment.accentOverride;
+  }
 }
 
 function renderPage() {
@@ -92,7 +110,7 @@ function renderPage() {
         ${establishment.description ? `<p class="desc">${escapeHtml(establishment.description)}</p>` : ''}
         <div class="portal-contact">
           ${establishment.phone ? `<span>${PHONE_ICON} ${escapeHtml(establishment.phone)}</span>` : ''}
-          ${establishment.address ? `<span>${PIN_ICON} ${escapeHtml(establishment.address)}</span>` : ''}
+          ${establishment.address ? `<a class="portal-contact-link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(establishment.address)}" target="_blank" rel="noopener" title="Abrir no Google Maps">${PIN_ICON} ${escapeHtml(establishment.address)}</a>` : ''}
         </div>
       </div>
       <div class="portal-body">

@@ -115,8 +115,18 @@ router.put('/admin-associate/:userId', (req, res) => {
   if (!targetUser) return res.status(404).json({ error: 'Usuario nao encontrado.' });
 
   const { allowedEstablishmentIds } = req.body || {};
-  // allowedEstablishmentIds deve ser um array de IDs ou null para acesso global
-  const ids = Array.isArray(allowedEstablishmentIds) ? allowedEstablishmentIds : null;
+  // allowedEstablishmentIds deve ser:
+  //   - null  -> acesso global (sem restricao, admin tipicamente)
+  //   - array -> IDs permitidos (nao vazio p/ nao-admin, senao lockout)
+  let ids = Array.isArray(allowedEstablishmentIds) ? allowedEstablishmentIds : null;
+
+  // Anti-lockout: nao-admin com array vazio nao consegue logar (auth.js 403
+  // "nao associado a nenhum estabelecimento"). Rejeitar p/ evitar isso.
+  if (Array.isArray(ids) && ids.length === 0 && targetUser.role !== 'admin') {
+    return res.status(400).json({
+      error: 'Voce precisa marcar ao menos 1 estabelecimento (ou ativar Acesso Global). Este usuario ficaria sem acesso e nao conseguiria fazer login.'
+    });
+  }
 
   store.update('users', targetUser.id, { allowedEstablishmentIds: ids });
   res.json({ ok: true, message: 'Associacoes atualizadas com sucesso.' });

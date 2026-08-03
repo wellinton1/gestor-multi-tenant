@@ -232,7 +232,7 @@ O projeto **Gestor Multi-Tenant** foi hardening contra as principais classes de 
 - ✅ **A07 Identification Failures** - Strong passwords, session rotation, password change enforcement
 - ✅ **A08 Software Integrity** - package-lock.json committed, supply chain verified
 - ✅ **A09 Logging Failures** - Structured error handling, no stack traces in prod
-- ✅ **A10 SSRF** - No server-side requests to user-supplied URLs
+- ✅ **A10 SSRF** - No server-side requests to user-supplied URLs/
 
 **Aprovado para deploy em producao com HTTPS configurado.**
 

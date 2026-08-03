@@ -46,7 +46,14 @@ router.get('/me', (req, res) => {
 
 router.get('/', requireEstablishment, (req, res, next) => {
   try {
-    const users = store.all('users').filter((user) => Array.isArray(user.allowedEstablishmentIds) && user.allowedEstablishmentIds.includes(req.session.establishmentId));
+    const estId = req.session.establishmentId;
+    // Inclui usuarios com acesso global (allowedEstablishmentIds === null)
+    // e os associados explicitamente a este estabelecimento.
+    const users = store.all('users').filter((user) => {
+      const allowed = user.allowedEstablishmentIds;
+      if (allowed === null || allowed === undefined) return true; // acesso global
+      return Array.isArray(allowed) && allowed.includes(estId);
+    });
     res.json(users.map((user) => ({
       id: user.id,
       name: user.name,
@@ -65,7 +72,12 @@ router.get('/by-establishment/:id', (req, res, next) => {
     if (!hasAccessToEstablishment(req, estId)) {
       return res.status(403).json({ error: 'Acesso ao estabelecimento nao autorizado.' });
     }
-    const users = store.all('users').filter((user) => Array.isArray(user.allowedEstablishmentIds) && user.allowedEstablishmentIds.includes(estId));
+    // Inclui usuarios com acesso global e os associados a este estabelecimento.
+    const users = store.all('users').filter((user) => {
+      const allowed = user.allowedEstablishmentIds;
+      if (allowed === null || allowed === undefined) return true;
+      return Array.isArray(allowed) && allowed.includes(estId);
+    });
     res.json(users.map((user) => ({
       id: user.id,
       name: user.name,
@@ -135,6 +147,11 @@ router.delete('/:id', requireEstablishment, (req, res, next) => {
 
     const user = store.findById('users', req.params.id);
     if (!user) return res.status(404).json({ error: 'Usuario nao encontrado.' });
+    // Usuarios com acesso global (null) nao podem ser removidos por estabelecimento.
+    // Use a pagina de Gerenciamento de Senhas (admin global) para gerenciar essas contas.
+    if (user.allowedEstablishmentIds === null || user.allowedEstablishmentIds === undefined) {
+      return res.status(403).json({ error: 'Este usuario tem acesso global e so pode ser gerenciado pela pagina de Senhas.' });
+    }
     if (!Array.isArray(user.allowedEstablishmentIds) || !user.allowedEstablishmentIds.includes(req.session.establishmentId)) {
       return res.status(403).json({ error: 'Acesso ao usuario nao autorizado.' });
     }
