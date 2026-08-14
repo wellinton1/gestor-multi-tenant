@@ -22,6 +22,7 @@ const PHONE_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" 
 const PIN_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.3"/></svg>';
 const CLOCK_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
 const CHECK_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>';
+const PIX_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>';
 
 function escapeHtml(str) {
   return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
@@ -309,9 +310,17 @@ function renderPage() {
       if (!res.ok) {
         throw new Error(data.details || data.error || 'Erro ao agendar.');
       }
+      const bookingTotal = data.total || 0;
+      const hasPayment = data.hasPayment || false;
       selectedServices = [];
       try {
-        renderSuccess();
+        renderSuccess({
+          total: bookingTotal,
+          hasPayment,
+          clientName: payload.clientName,
+          clientEmail: payload.clientEmail,
+          clientPhone: payload.clientPhone
+        });
       } catch (e) {
         console.error('renderSuccess error:', e);
       }
@@ -401,7 +410,10 @@ function startBookingCooldown() {
   }, 1000);
 }
 
-function renderSuccess() {
+function renderSuccess(bookingInfo) {
+  const info = bookingInfo || {};
+  const hasPayment = info.hasPayment && info.total > 0;
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -411,12 +423,22 @@ function renderSuccess() {
           <h2>Agendamento recebido!</h2>
           <p style="margin:6px 0 0 0; color:var(--text-muted); font-size:14px;">Aguarde 15 segundos para um novo agendamento.</p>
         </div>
-        <button type="button" class="modal-close" aria-label="Fechar">×</button>
+        <button type="button" class="modal-close" aria-label="Fechar">&times;</button>
       </div>
       <div class="portal-success">
         <div class="check-circle">${CHECK_ICON}</div>
         <p style="margin:0 0 8px 0; font-weight:700;">Sua solicitação foi enviada com sucesso.</p>
         <p style="color:var(--text-muted);font-size:14.5px;">O estabelecimento receberá seu pedido e entrará em contato para confirmar o horário.</p>
+        ${hasPayment ? `
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e5e5e5);">
+            <p style="font-weight:600;margin:0 0 4px 0;">Total: ${formatMoney(info.total)}</p>
+            <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px 0;">Pague agora via PIX para garantir seu agendamento.</p>
+            <button type="button" class="btn btn-primary" id="pay-pix-btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;">
+              ${PIX_ICON} Pagar com PIX
+            </button>
+          </div>
+          <div id="pix-result" style="margin-top:16px;"></div>
+        ` : ''}
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" id="close-success">Fechar</button>
@@ -434,6 +456,104 @@ function renderSuccess() {
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) removeOverlay();
   });
+
+  if (hasPayment) {
+    const payBtn = overlay.querySelector('#pay-pix-btn');
+    const resultEl = overlay.querySelector('#pix-result');
+
+    payBtn.addEventListener('click', async () => {
+      payBtn.disabled = true;
+      payBtn.textContent = 'Gerando PIX...';
+      try {
+        const csrfToken = getCsrfToken();
+        const headers = { 'Content-Type': 'application/json' };
+        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+
+        const res = await fetch(`/api/portal/${establishment.id}/pay-pix`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            amount: info.total,
+            description: `Agendamento - ${info.clientName}`,
+            customerEmail: info.clientEmail || undefined,
+            customerName: info.clientName,
+            customerPhone: info.clientPhone
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.details || data.error || 'Erro ao gerar PIX.');
+
+        const pixData = data.data || data;
+        const brCode = pixData.brCode || '';
+        const brCodeBase64 = pixData.brCodeBase64 || '';
+        const pixId = pixData.id || '';
+
+        payBtn.style.display = 'none';
+
+        resultEl.innerHTML = `
+          <div style="text-align:center;">
+            ${brCodeBase64 ? `<img src="${brCodeBase64}" alt="QR Code PIX" style="max-width:200px;margin:0 auto 12px;display:block;border-radius:8px;" />` : ''}
+            <div style="background:var(--bg-muted,#f5f5f5);padding:10px;border-radius:6px;word-break:break-all;font-family:monospace;font-size:11px;margin-bottom:10px;max-height:80px;overflow-y:auto;">
+              ${escapeHtml(brCode)}
+            </div>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary" id="copy-pix-btn" style="font-size:13px;">Copiar codigo PIX</button>
+              ${pixId ? `<button type="button" class="btn btn-secondary" id="check-pix-btn" data-id="${pixId}" style="font-size:13px;">Verificar pagamento</button>` : ''}
+            </div>
+            <div id="pix-status" style="margin-top:10px;font-size:13px;"></div>
+          </div>
+        `;
+
+        const copyBtn = resultEl.querySelector('#copy-pix-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(brCode).then(() => {
+              copyBtn.textContent = 'Copiado!';
+              setTimeout(() => { copyBtn.textContent = 'Copiar codigo PIX'; }, 2000);
+            }).catch(() => {
+              const ta = document.createElement('textarea');
+              ta.value = brCode;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              ta.remove();
+              copyBtn.textContent = 'Copiado!';
+              setTimeout(() => { copyBtn.textContent = 'Copiar codigo PIX'; }, 2000);
+            });
+          });
+        }
+
+        const checkBtn = resultEl.querySelector('#check-pix-btn');
+        if (checkBtn) {
+          checkBtn.addEventListener('click', async () => {
+            const statusEl = resultEl.querySelector('#pix-status');
+            statusEl.textContent = 'Verificando...';
+            try {
+              const csrfToken2 = getCsrfToken();
+              const headers2 = {};
+              if (csrfToken2) headers2['X-CSRF-Token'] = csrfToken2;
+              const statusRes = await fetch(`/api/portal/${establishment.id}/check-pix/${pixId}`, { headers: headers2 });
+              const statusData = await statusRes.json();
+              if (!statusRes.ok) throw new Error(statusData.error || 'Erro');
+              const s = (statusData.data && statusData.data.status) || statusData.status || 'Desconhecido';
+              if (s === 'PAID' || s === 'COMPLETED') {
+                statusEl.innerHTML = '<span style="color:#10b981;font-weight:600;">Pagamento confirmado!</span>';
+              } else {
+                statusEl.innerHTML = `<strong>Status:</strong> ${escapeHtml(s)} <span style="color:var(--text-muted);">(aguardando pagamento)</span>`;
+              }
+            } catch (e) {
+              statusEl.textContent = 'Erro ao verificar: ' + e.message;
+            }
+          });
+        }
+      } catch (e) {
+        resultEl.innerHTML = `<p style="color:#ef4444;font-size:13px;">${escapeHtml(e.message)}</p>`;
+        payBtn.disabled = false;
+        payBtn.innerHTML = `${PIX_ICON} Pagar com PIX`;
+        payBtn.style.display = '';
+      }
+    });
+  }
 }
 
 boot();

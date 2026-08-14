@@ -32,6 +32,7 @@ const usersRoutes = require('./src/routes/users');
 const passwordRoutes = require('./src/routes/password');
 const securityRoutes = require('./src/routes/security');
 const setupRoutes = require('./src/routes/setup');
+const paymentsRoutes = require('./src/routes/payments');
 
 const app = express();
 const DEFAULT_PORT = Number(process.env.PORT) || 3000;
@@ -229,6 +230,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/portal', portalLimiter, portalRoutes);
 app.use('/api/security', securityRoutes);
+app.use('/api/payments', paymentsRoutes);
 
 // Static frontend com cache-control
 app.use(express.static(path.join(__dirname, 'public'), {

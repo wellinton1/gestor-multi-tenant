@@ -34,7 +34,8 @@ const ICONS = {
   shield: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 4v6c0 5.5-4 10.6-9 12-5-1.4-9-6.5-9-12V6z"/><path d="M9 12l2 2 4-4"/></svg>',
   lock: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>',
   pause: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
-  play: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 4l14 8-14 8z"/></svg>'
+  play: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 4l14 8-14 8z"/></svg>',
+  creditCard: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>'
 };
 
 const NICHE_ICON = {
@@ -1003,6 +1004,7 @@ async function renderPedidosPage() {
           ${appts.map((a) => {
             const rawPhone = a.clientPhone || (cachedClients.find((c) => c.id === a.clientId) || {}).phone || '';
             const whatsappLink = toWhatsappLink(rawPhone);
+            const clientEmail = (cachedClients.find((c) => c.id === a.clientId) || {}).email || '';
             return `
             <tr data-id="${a.id}">
               <td class="cell-strong">${escapeHtml(a.clientName)}</td>
@@ -1017,6 +1019,7 @@ async function renderPedidosPage() {
                 </select>
               </td>
               <td class="actions-cell">
+                <button class="btn-icon pay-appt" data-id="${a.id}" data-total="${a.total}" data-client="${escapeHtml(a.clientName)}" data-email="${escapeHtml(clientEmail)}" data-phone="${escapeHtml(rawPhone)}" title="Cobrar via AbacatePay">${ICONS.creditCard}</button>
                 <button class="btn-icon edit-appt" data-id="${a.id}">${ICONS.pencil}</button>
                 <button class="btn-icon danger delete-appt" data-id="${a.id}">${ICONS.trash}</button>
               </td>
@@ -1052,6 +1055,17 @@ async function renderPedidosPage() {
         toast('Agendamento excluido.');
         renderPedidosPage();
       } catch (e) { toast(e.message, true); }
+    });
+  });
+  mainEl().querySelectorAll('.pay-appt').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openPaymentModal({
+        appointmentId: btn.dataset.id,
+        total: parseFloat(btn.dataset.total) || 0,
+        clientName: btn.dataset.client || '',
+        clientEmail: btn.dataset.email || '',
+        clientPhone: btn.dataset.phone || ''
+      });
     });
   });
 }
@@ -1145,6 +1159,192 @@ function openAppointmentModal(appt) {
         closeModal();
         renderPedidosPage();
       } catch (err) { toast(err.message, true); }
+    });
+  });
+}
+
+// ---------- Payment Modal (AbacatePay) ----------
+async function openPaymentModal(info) {
+  let apiKeyStatus;
+  try {
+    apiKeyStatus = await api('GET', '/api/payments/api-key');
+  } catch (e) {
+    return toast(e.message, true);
+  }
+
+  if (!apiKeyStatus.configured) {
+    showModal('Pagamento - AbacatePay', `
+      <div style="text-align:center;padding:20px;">
+        <p style="margin-bottom:16px;">Configure sua API key do AbacatePay antes de cobrar.</p>
+        <form id="pay-apikey-form">
+          <div class="form-field">
+            <label>API Key do AbacatePay</label>
+            <input type="password" name="apiKey" placeholder="Sua API key" required />
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="cancel-pay-apikey">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Salvar API Key</button>
+          </div>
+        </form>
+        <p style="margin-top:12px;font-size:12px;color:var(--text-muted);">
+          Obtenha sua API key em <a href="https://abacatepay.com" target="_blank" rel="noopener">abacatepay.com</a>
+        </p>
+      </div>
+    `, (overlay) => {
+      overlay.querySelector('#cancel-pay-apikey').addEventListener('click', closeModal);
+      overlay.querySelector('#pay-apikey-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        try {
+          await api('PUT', '/api/payments/api-key', { apiKey: fd.get('apiKey') });
+          toast('API key salva com sucesso.');
+          closeModal();
+          openPaymentModal(info);
+        } catch (err) { toast(err.message, true); }
+      });
+    });
+    return;
+  }
+
+  const bodyHtml = `
+    <div style="padding:8px 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div>
+          <strong>${escapeHtml(info.clientName)}</strong>
+          <span style="color:var(--text-muted);font-size:13px;margin-left:8px;">${formatMoney(info.total)}</span>
+        </div>
+        <button type="button" class="btn btn-secondary" id="pay-change-key" style="font-size:12px;padding:4px 10px;">Trocar API Key</button>
+      </div>
+      <div class="form-field">
+        <label>Email do cliente</label>
+        <input type="email" id="pay-email" value="${escapeHtml(info.clientEmail)}" placeholder="email@exemplo.com" />
+      </div>
+      <div class="form-field">
+        <label>Valor (R$)</label>
+        <input type="number" step="0.01" id="pay-amount" value="${info.total}" min="0.01" />
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button type="button" class="btn btn-primary" id="pay-pix-btn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;">
+          ${ICONS.creditCard} PIX (Copia e Cola)
+        </button>
+        <button type="button" class="btn btn-secondary" id="pay-checkout-btn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;">
+          ${ICONS.globe} Checkout Hospedado
+        </button>
+      </div>
+      <div id="pay-result" style="margin-top:16px;"></div>
+    </div>
+  `;
+
+  showModal('Cobrar Pagamento', bodyHtml, (overlay) => {
+    const resultEl = overlay.querySelector('#pay-result');
+
+    overlay.querySelector('#pay-change-key').addEventListener('click', () => {
+      const newKey = prompt('Digite a nova API key do AbacatePay:');
+      if (newKey) {
+        api('PUT', '/api/payments/api-key', { apiKey: newKey })
+          .then(() => { toast('API key atualizada.'); closeModal(); openPaymentModal(info); })
+          .catch((e) => toast(e.message, true));
+      }
+    });
+
+    overlay.querySelector('#pay-pix-btn').addEventListener('click', async () => {
+      const email = overlay.querySelector('#pay-email').value.trim();
+      const amount = parseFloat(overlay.querySelector('#pay-amount').value);
+      if (!amount || amount <= 0) return toast('Informe um valor valido.', true);
+
+      resultEl.innerHTML = '<div class="loading-state">Gerando PIX...</div>';
+      try {
+        const payload = { amount, description: `Agendamento - ${info.clientName}` };
+        if (email) payload.customer = { email };
+        const result = await api('POST', '/api/payments/create-pix', payload);
+        const pixData = result.data || result;
+        const brCode = pixData.brCode || '';
+        const brCodeBase64 = pixData.brCodeBase64 || '';
+        const pixId = pixData.id || '';
+
+        resultEl.innerHTML = `
+          <div style="text-align:center;">
+            ${brCodeBase64 ? `<img src="${brCodeBase64}" alt="QR Code PIX" style="max-width:200px;margin:0 auto 12px;display:block;border-radius:8px;" />` : ''}
+            <div style="background:var(--bg-muted,#f5f5f5);padding:10px;border-radius:6px;word-break:break-all;font-family:monospace;font-size:12px;margin-bottom:8px;">
+              ${escapeHtml(brCode)}
+            </div>
+            <button type="button" class="btn btn-secondary" id="copy-pix-btn" style="font-size:13px;">Copiar codigo PIX</button>
+            ${pixId ? `<button type="button" class="btn btn-secondary" id="check-pix-btn" data-id="${pixId}" style="font-size:13px;margin-left:6px;">Verificar pagamento</button>` : ''}
+            <div id="pix-status" style="margin-top:8px;font-size:13px;"></div>
+          </div>
+        `;
+
+        const copyBtn = resultEl.querySelector('#copy-pix-btn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(brCode).then(() => toast('Codigo PIX copiado!')).catch(() => toast('Erro ao copiar.', true));
+          });
+        }
+
+        const checkBtn = resultEl.querySelector('#check-pix-btn');
+        if (checkBtn) {
+          checkBtn.addEventListener('click', async () => {
+            const statusEl = resultEl.querySelector('#pix-status');
+            statusEl.textContent = 'Verificando...';
+            try {
+              const status = await api('GET', `/api/payments/check/${pixId}`);
+              const s = (status.data && status.data.status) || status.status || 'Desconhecido';
+              statusEl.innerHTML = `<strong>Status:</strong> ${escapeHtml(s)}`;
+              if (s === 'PAID' || s === 'COMPLETED') {
+                statusEl.innerHTML += '<br><span style="color:#10b981;font-weight:600;">Pagamento confirmado!</span>';
+              }
+            } catch (e) { statusEl.textContent = 'Erro: ' + e.message; }
+          });
+        }
+      } catch (e) {
+        resultEl.innerHTML = `<p style="color:#ef4444;">${escapeHtml(e.message)}</p>`;
+      }
+    });
+
+    overlay.querySelector('#pay-checkout-btn').addEventListener('click', async () => {
+      const email = overlay.querySelector('#pay-email').value.trim();
+      const amount = parseFloat(overlay.querySelector('#pay-amount').value);
+      if (!amount || amount <= 0) return toast('Informe um valor valido.', true);
+      if (!email) return toast('Informe o email do cliente.', true);
+
+      resultEl.innerHTML = '<div class="loading-state">Criando checkout...</div>';
+      try {
+        const customerResult = await api('POST', '/api/payments/create-customer', {
+          email,
+          name: info.clientName,
+          cellphone: info.clientPhone || undefined
+        });
+        const customerId = (customerResult.data && customerResult.data.id) || customerResult.id;
+
+        const productResult = await api('POST', '/api/payments/create-product', {
+          externalId: `appt-${info.appointmentId}-${Date.now()}`,
+          name: `Agendamento - ${info.clientName}`,
+          price: amount,
+          description: `Pagamento do agendamento`
+        });
+        const productId = (productResult.data && productResult.data.id) || productResult.id;
+
+        const checkoutResult = await api('POST', '/api/payments/create-checkout', {
+          items: [{ id: productId, quantity: 1 }],
+          customerId,
+          methods: ['PIX', 'CARD'],
+          returnUrl: window.location.href,
+          completionUrl: window.location.href
+        });
+        const checkoutUrl = (checkoutResult.data && checkoutResult.data.url) || checkoutResult.url;
+
+        resultEl.innerHTML = `
+          <div style="text-align:center;">
+            <p style="margin-bottom:12px;">Checkout criado com sucesso!</p>
+            <a href="${escapeHtml(checkoutUrl)}" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;">
+              ${ICONS.globe} Abrir pagina de pagamento
+            </a>
+            <p style="margin-top:8px;font-size:12px;color:var(--text-muted);">O cliente sera redirecionado para o AbacatePay</p>
+          </div>
+        `;
+      } catch (e) {
+        resultEl.innerHTML = `<p style="color:#ef4444;">${escapeHtml(e.message)}</p>`;
+      }
     });
   });
 }
@@ -1712,6 +1912,24 @@ async function renderConfiguracoesPage() {
       </div>
     </div>
     <div class="card settings-card">
+      <h3 style="margin:0 0 4px 0;font-size:17px;">${ICONS.creditCard} Pagamentos - AbacatePay</h3>
+      <p style="color:var(--text-muted);font-size:13px;margin:0 0 18px 0;">Configure sua API key para cobrar clientes via PIX e cartao diretamente nos agendamentos.</p>
+      <form id="abacatepay-form">
+        <div class="form-field">
+          <label>API Key</label>
+          <input type="password" name="abacatePayApiKey" id="abacatepay-key-input" placeholder="Cole sua API key aqui" />
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button type="submit" class="btn btn-primary">Salvar API Key</button>
+          <button type="button" class="btn btn-secondary" id="abacatepay-remove-btn">Remover API Key</button>
+          <span id="abacatepay-status" style="font-size:13px;color:var(--text-muted);"></span>
+        </div>
+      </form>
+      <p style="margin-top:12px;font-size:12px;color:var(--text-muted);">
+        Obtenha sua API key em <a href="https://abacatepay.com" target="_blank" rel="noopener">abacatepay.com</a>
+      </p>
+    </div>
+    <div class="card settings-card">
       <div class="page-header" style="align-items:flex-start;gap:12px;flex-wrap:wrap;">
         <div><h2>Usuarios do Estabelecimento</h2><p>Gerencie contas de acesso para este tenant</p></div>
         <button class="btn btn-primary" id="new-user-btn">${ICONS.plus} Novo Usuario</button>
@@ -1720,6 +1938,45 @@ async function renderConfiguracoesPage() {
     </div>
   `;
   document.getElementById('open-portal-btn').addEventListener('click', () => window.open(portalUrl, '_blank'));
+  (async () => {
+    try {
+      const status = await api('GET', '/api/payments/api-key');
+      const statusEl = document.getElementById('abacatepay-status');
+      if (statusEl) {
+        statusEl.textContent = status.configured ? 'API key configurada (' + status.masked + ')' : 'Nao configurada';
+        statusEl.style.color = status.configured ? '#10b981' : 'var(--text-muted)';
+      }
+    } catch (e) { /* ignore */ }
+  })();
+  document.getElementById('abacatepay-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const key = fd.get('abacatePayApiKey');
+    if (!key) return toast('Informe a API key.', true);
+    try {
+      await api('PUT', '/api/payments/api-key', { apiKey: key });
+      toast('API key do AbacatePay salva.');
+      const statusEl = document.getElementById('abacatepay-status');
+      if (statusEl) {
+        statusEl.textContent = 'API key configurada (...' + key.slice(-6) + ')';
+        statusEl.style.color = '#10b981';
+      }
+      document.getElementById('abacatepay-key-input').value = '';
+    } catch (err) { toast(err.message, true); }
+  });
+  document.getElementById('abacatepay-remove-btn').addEventListener('click', async () => {
+    if (!confirm('Remover a API key do AbacatePay? O pagamento PIX sera desativado no portal.')) return;
+    try {
+      await api('DELETE', '/api/payments/api-key');
+      toast('API key removida.');
+      const statusEl = document.getElementById('abacatepay-status');
+      if (statusEl) {
+        statusEl.textContent = 'Nao configurada';
+        statusEl.style.color = 'var(--text-muted)';
+      }
+      document.getElementById('abacatepay-key-input').value = '';
+    } catch (err) { toast(err.message, true); }
+  });
   // Pausar / Reativar (somente admin da plataforma)
   const btnPause = document.getElementById('btn-pause-settings');
   const btnResume = document.getElementById('btn-resume-settings');

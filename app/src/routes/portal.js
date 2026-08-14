@@ -67,6 +67,7 @@ router.get('/:establishmentId', async (req, res) => {
       address: est.address,
       logoDataUrl: est.logoDataUrl,
       businessHours: est.businessHours || getDefaultBusinessHours(),
+      hasPayment: !!est.abacatePayApiKey,
       services
     });
   } catch (err) {
@@ -235,11 +236,117 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       createdAt: new Date().toISOString()
     });
 
-    res.status(201).json({ ok: true, appointment, total });
+    res.status(201).json({ ok: true, appointment, total, hasPayment: !!est.abacatePayApiKey });
   } catch (err) {
     console.error('ERROR in POST /api/portal/:id/book:', err.message);
     res.status(500).json({
       error: 'Erro interno do servidor',
+      ...(isProduction ? {} : { details: err.message })
+    });
+  }
+});
+
+const ABACATEPAY_BASE = 'https://api.abacatepay.com/v2';
+
+async function abacateRequest(method, path, apiKey, body) {
+  const opts = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${ABACATEPAY_BASE}${path}`, opts);
+  let data;
+  try { data = await res.json(); } catch (e) { data = null; }
+  if (!res.ok) {
+    const errMsg = (data && (data.error || (data.errorDetail) || (data.message))) || `AbacatePay retornou ${res.status}`;
+    const err = new Error(errMsg);
+    err.responseData = data;
+    throw err;
+  }
+  return data;
+}
+
+router.post('/:establishmentId/pay-pix', async (req, res) => {
+  try {
+    const est = store.findById('establishments', req.params.establishmentId);
+    if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    const apiKey = est.abacatePayApiKey;
+    if (!apiKey) return res.status(400).json({ error: 'Pagamento nao disponivel para este estabelecimento.' });
+
+    const { amount, description, customerEmail, customerName, customerPhone } = req.body || {};
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Valor e obrigatorio.' });
+    }
+
+    const payload = {
+      method: 'PIX',
+      data: {
+        amount: Math.round(amount * 100)
+      }
+    };
+    if (description) payload.data.description = String(description);
+
+    console.log('DEBUG AbacatePay payload:', JSON.stringify(payload, null, 2));
+    console.log('DEBUG AbacatePay API key:', apiKey.substring(0, 10) + '...');
+
+    const opts = {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    };
+
+    console.log('DEBUG Request headers:', opts.headers);
+    console.log('DEBUG Request body:', opts.body);
+
+    const apiRes = await fetch(`${ABACATEPAY_BASE}/transparents/create`, opts);
+    const responseText = await apiRes.text();
+    console.log('DEBUG Response status:', apiRes.status);
+    console.log('DEBUG Response body:', responseText);
+
+    let data;
+    try { data = JSON.parse(responseText); } catch (e) { data = null; }
+
+    if (!apiRes.ok) {
+      const errMsg = (data && (data.error || data.errorDetail || data.message)) || `AbacatePay retornou ${apiRes.status}`;
+      return res.status(500).json({
+        error: errMsg,
+        debug: {
+          status: apiRes.status,
+          response: data || responseText,
+          payload: payload
+        }
+      });
+    }
+
+    res.json(data);
+  } catch (err) {
+    console.error('ERROR POST /api/portal/:id/pay-pix:', err.message);
+    res.status(500).json({
+      error: err.message || 'Erro ao gerar PIX',
+      debug: { message: err.message }
+    });
+  }
+});
+
+router.get('/:establishmentId/check-pix/:pixId', async (req, res) => {
+  try {
+    const est = store.findById('establishments', req.params.establishmentId);
+    if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    const apiKey = est.abacatePayApiKey;
+    if (!apiKey) return res.status(400).json({ error: 'Pagamento nao disponivel.' });
+
+    const result = await abacateRequest('GET', `/transparents/check?id=${req.params.pixId}`, apiKey);
+    res.json(result);
+  } catch (err) {
+    console.error('ERROR GET /api/portal/:id/check-pix:', err.message);
+    res.status(500).json({
+      error: 'Erro ao verificar pagamento',
       ...(isProduction ? {} : { details: err.message })
     });
   }
