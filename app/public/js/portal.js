@@ -23,11 +23,37 @@ const PIN_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" st
 const CLOCK_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>';
 const CHECK_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>';
 const PIX_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>';
+const CARD_ICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20"/><path d="M6 14h4"/><path d="M14 14h4"/></svg>';
 
 function escapeHtml(str) {
   return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   })[c]);
+}
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{6})$/i.exec(hex);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+function shade(hex, factor) {
+  const m = /^#?([a-f\d]{6})$/i.exec(hex || '');
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = Math.max(0, Math.min(255, Math.round(((n >> 16) & 255) * (1 + factor))));
+  const g = Math.max(0, Math.min(255, Math.round(((n >> 8) & 255) * (1 + factor))));
+  const b = Math.max(0, Math.min(255, Math.round((n & 255) * (1 + factor))));
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
+function applyAccentColor(hex) {
+  if (!hex) return;
+  document.documentElement.style.setProperty('--accent', hex);
+  const rgb = hexToRgb(hex);
+  if (rgb) {
+    document.documentElement.style.setProperty('--accent-rgb', rgb);
+    document.documentElement.style.setProperty('--accent-dark', shade(hex, -0.15));
+    document.documentElement.style.setProperty('--accent-light', shade(hex, 0.15));
+  }
 }
 function formatMoney(v) {
   const n = Number(v) || 0;
@@ -81,9 +107,9 @@ function applyTheme() {
   link.dataset.themeAsset = theme;
   document.head.appendChild(link);
   document.body.dataset.theme = theme;
-  // accentOverride (validado no backend contra paleta do tema).
-  if (establishment && establishment.accentOverride) {
-    document.body.dataset.accentOverride = establishment.accentOverride;
+  // Cor de destaque: o backend já resolveu accentOverride para um hex aplicável.
+  if (establishment && establishment.accentColor) {
+    applyAccentColor(establishment.accentColor);
   }
 }
 
@@ -432,10 +458,23 @@ function renderSuccess(bookingInfo) {
         ${hasPayment ? `
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e5e5e5);">
             <p style="font-weight:600;margin:0 0 4px 0;">Total: ${formatMoney(info.total)}</p>
-            <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px 0;">Pague agora via PIX para garantir seu agendamento.</p>
-            <button type="button" class="btn btn-primary" id="pay-pix-btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;">
-              ${PIX_ICON} Pagar com PIX
-            </button>
+            <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px 0;">Pague agora para garantir seu agendamento.</p>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <button type="button" class="pay-amount-opt" data-mode="full" style="flex:1;padding:10px 8px;border:2px solid var(--accent);border-radius:8px;background:rgba(var(--accent-rgb),0.08);cursor:pointer;font-size:13px;color:inherit;display:flex;flex-direction:column;gap:2px;align-items:center;">
+                Valor total <strong>${formatMoney(info.total)}</strong>
+              </button>
+              <button type="button" class="pay-amount-opt" data-mode="half" style="flex:1;padding:10px 8px;border:2px solid var(--border,#e5e5e5);border-radius:8px;background:transparent;cursor:pointer;font-size:13px;color:inherit;display:flex;flex-direction:column;gap:2px;align-items:center;">
+                Sinal (50%) <strong>${formatMoney(info.total / 2)}</strong>
+              </button>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="btn btn-primary" id="pay-pix-btn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">
+                ${PIX_ICON} Pagar com PIX
+              </button>
+              <button type="button" class="btn btn-secondary" id="pay-card-btn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">
+                ${CARD_ICON} Cartao de credito
+              </button>
+            </div>
           </div>
           <div id="pix-result" style="margin-top:16px;"></div>
         ` : ''}
@@ -459,7 +498,39 @@ function renderSuccess(bookingInfo) {
 
   if (hasPayment) {
     const payBtn = overlay.querySelector('#pay-pix-btn');
+    const cardBtn = overlay.querySelector('#pay-card-btn');
     const resultEl = overlay.querySelector('#pix-result');
+    const amountOpts = overlay.querySelectorAll('.pay-amount-opt');
+
+    let payMode = 'full';
+    const selectedAmount = () => payMode === 'half'
+      ? Math.round(info.total * 100 / 2) / 100
+      : info.total;
+    const selectedDescription = () => payMode === 'half'
+      ? `Sinal (50%) - Agendamento - ${info.clientName}`
+      : `Agendamento - ${info.clientName}`;
+
+    const OPT_BASE = 'flex:1;padding:10px 8px;border-radius:8px;cursor:pointer;font-size:13px;color:inherit;display:flex;flex-direction:column;gap:2px;align-items:center;';
+    const OPT_SELECTED = OPT_BASE + 'border:2px solid var(--accent);background:rgba(var(--accent-rgb),0.08);';
+    const OPT_UNSELECTED = OPT_BASE + 'border:2px solid var(--border,#e5e5e5);background:transparent;';
+
+    function resetPayButtons() {
+      payBtn.disabled = false;
+      payBtn.innerHTML = `${PIX_ICON} Pagar com PIX`;
+      payBtn.style.display = '';
+      cardBtn.disabled = false;
+      cardBtn.innerHTML = `${CARD_ICON} Cartao de credito`;
+      cardBtn.style.display = '';
+    }
+
+    amountOpts.forEach((opt) => {
+      opt.addEventListener('click', () => {
+        payMode = opt.dataset.mode;
+        amountOpts.forEach((o) => { o.style.cssText = o.dataset.mode === payMode ? OPT_SELECTED : OPT_UNSELECTED; });
+        resultEl.innerHTML = '';
+        resetPayButtons();
+      });
+    });
 
     payBtn.addEventListener('click', async () => {
       payBtn.disabled = true;
@@ -473,8 +544,8 @@ function renderSuccess(bookingInfo) {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            amount: info.total,
-            description: `Agendamento - ${info.clientName}`,
+            amount: selectedAmount(),
+            description: selectedDescription(),
             customerEmail: info.clientEmail || undefined,
             customerName: info.clientName,
             customerPhone: info.clientPhone
@@ -489,9 +560,11 @@ function renderSuccess(bookingInfo) {
         const pixId = pixData.id || '';
 
         payBtn.style.display = 'none';
+        cardBtn.style.display = 'none';
 
         resultEl.innerHTML = `
           <div style="text-align:center;">
+            <p style="font-weight:600;margin:0 0 10px 0;">${formatMoney(selectedAmount())}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
             ${brCodeBase64 ? `<img src="${brCodeBase64}" alt="QR Code PIX" style="max-width:200px;margin:0 auto 12px;display:block;border-radius:8px;" />` : ''}
             <div style="background:var(--bg-muted,#f5f5f5);padding:10px;border-radius:6px;word-break:break-all;font-family:monospace;font-size:11px;margin-bottom:10px;max-height:80px;overflow-y:auto;">
               ${escapeHtml(brCode)}
@@ -548,9 +621,58 @@ function renderSuccess(bookingInfo) {
         }
       } catch (e) {
         resultEl.innerHTML = `<p style="color:#ef4444;font-size:13px;">${escapeHtml(e.message)}</p>`;
-        payBtn.disabled = false;
-        payBtn.innerHTML = `${PIX_ICON} Pagar com PIX`;
-        payBtn.style.display = '';
+        resetPayButtons();
+      }
+    });
+
+    cardBtn.addEventListener('click', async () => {
+      cardBtn.disabled = true;
+      cardBtn.textContent = 'Gerando link...';
+      try {
+        const csrfToken = getCsrfToken();
+        const headers = { 'Content-Type': 'application/json' };
+        if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+
+        const res = await fetch(`/api/portal/${establishment.id}/pay-card`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            amount: selectedAmount(),
+            description: selectedDescription(),
+            customerEmail: info.clientEmail || undefined,
+            customerName: info.clientName,
+            customerPhone: info.clientPhone,
+            returnUrl: window.location.href,
+            completionUrl: window.location.href
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const msg = data.details || data.error || 'Erro ao gerar pagamento.';
+          if (msg.includes('CARD is not available')) {
+            throw new Error('Pagamento com cartão não está habilitado para esta loja. Use PIX ou configure no AbacatePay.');
+          }
+          throw new Error(msg);
+        }
+
+        const cardUrl = (data.data && data.data.url) || data.url;
+        if (!cardUrl) throw new Error('Link de pagamento nao retornado.');
+
+        payBtn.style.display = 'none';
+        cardBtn.style.display = 'none';
+
+        resultEl.innerHTML = `
+          <div style="text-align:center;">
+            <p style="font-weight:600;margin:0 0 12px 0;">${formatMoney(selectedAmount())}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
+            <a href="${escapeHtml(cardUrl)}" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;">
+              ${CARD_ICON} Pagar ${formatMoney(selectedAmount())} com cartao
+            </a>
+            <p style="margin-top:8px;font-size:12px;color:var(--text-muted);">Voce sera redirecionado para a pagina segura do AbacatePay</p>
+          </div>
+        `;
+      } catch (e) {
+        resultEl.innerHTML = `<p style="color:#ef4444;font-size:13px;">${escapeHtml(e.message)}</p>`;
+        resetPayButtons();
       }
     });
   }

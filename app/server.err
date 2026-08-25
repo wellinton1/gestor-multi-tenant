@@ -1,0 +1,12 @@
+Erro nao tratado: EPERM: operation not permitted, rename 'C:\Users\wellington\Desktop\gestor-multi-tenant\app\data\sessions\2-vAwivsO8sV1n2Fbg0gbV35To62jEmj.json.903025160' -> 'C:\Users\wellington\Desktop\gestor-multi-tenant\app\data\sessions\2-vAwivsO8sV1n2Fbg0gbV35To62jEmj.json'
+Error [ERR_HTTP_HEADERS_SENT]: Cannot set headers after they are sent to the client
+    at ServerResponse.setHeader (node:_http_outgoing:642:11)
+    at ServerResponse.header (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\response.js:794:10)
+    at ServerResponse.json (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\response.js:275:10)
+    at C:\Users\wellington\Desktop\gestor-multi-tenant\app\server.js:301:19
+    at Layer.handle_error (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\router\layer.js:71:5)
+    at trim_prefix (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\router\index.js:326:13)
+    at C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\router\index.js:286:9
+    at router.process_params (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\router\index.js:346:12)
+    at next (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\router\index.js:280:10)
+    at Layer.handle_error (C:\Users\wellington\Desktop\gestor-multi-tenant\app\node_modules\express\lib\router\layer.js:67:12)

@@ -1,0 +1,271 @@
+{
+  "users": [
+    {
+      "id": "5ee442e8-6f0b-4a3c-9bc6-b83f8ac4c3c1",
+      "name": "Operador A",
+      "email": "operadorA@gestor.com",
+      "passwordHash": "$2a$12$tqblynqq.tXr5xnjptxVSuCXHhoPI3VCGeVDE2.gX2zMosGKovNIa",
+      "role": "operator",
+      "allowedEstablishmentIds": [
+        "4db7405a-7a2c-4110-b50f-b5103e28730c"
+      ],
+      "createdAt": "2026-08-03T20:16:35.332Z",
+      "passwordChangedAt": "2026-08-03T20:16:35.576Z"
+    },
+    {
+      "id": "2d418110-0d11-4264-a6e6-35566360c0a2",
+      "name": "Operador B",
+      "email": "operadorB@gestor.com",
+      "passwordHash": "$2a$12$30awAzpcvcsUDtvhbIzuAONZL25RiGESky/reyUitBuiQyn/yzp32",
+      "role": "operator",
+      "allowedEstablishmentIds": [
+        "ce3afe3b-906f-47cb-a026-6ca51d2dca38"
+      ],
+      "createdAt": "2026-08-03T20:16:35.332Z",
+      "passwordChangedAt": "2026-08-03T20:16:35.809Z"
+    },
+    {
+      "id": "e9819025-afab-47a4-a9a5-6d1e3e828a2f",
+      "name": "administrador",
+      "email": "skyred1@gmail.com",
+      "passwordHash": "$2a$12$9fWT6HiEAuT6yHWo1z.0geUxGaIHC9tY0Uh4qRw9NRUKuqJd5deAG",
+      "role": "admin",
+      "passwordChangedAt": "2026-08-03T20:18:06.344Z",
+      "createdAt": "2026-08-03T20:18:06.344Z",
+      "allowedEstablishmentIds": [
+        "4db7405a-7a2c-4110-b50f-b5103e28730c",
+        "ce3afe3b-906f-47cb-a026-6ca51d2dca38"
+      ]
+    }
+  ],
+  "establishments": [
+    {
+      "id": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Barbearia Elite",
+      "niche": "Barbearia",
+      "phone": "(11) 3456-7890",
+      "address": "Rua Augusta, 1234 - Sao Paulo, SP",
+      "description": "Barbearia premium com cortes classicos e modernos, barba e tratamentos capilares.",
+      "logoDataUrl": "",
+      "expirationPeriod": "Sem expiracao",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "ce3afe3b-906f-47cb-a026-6ca51d2dca38",
+      "name": "Pizzaria Boa Mesa",
+      "niche": "Pizzaria",
+      "phone": "(11) 3344-5566",
+      "address": "Av. das Acacias, 200 - Sao Paulo, SP",
+      "description": "Pizzaria artesanal com forno a lenha e sabores tradicionais.",
+      "logoDataUrl": "",
+      "expirationPeriod": "Sem expiracao",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    }
+  ],
+  "employees": [
+    {
+      "id": "3dc39dc4-1549-4cdf-96aa-131b08d2c41e",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Joao Silva",
+      "role": "Administrador",
+      "email": "joao@barbeariaelite.com",
+      "phone": "(11) 91234-5678",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "489358db-d7fe-4aec-aecc-4d2e3abe5f96",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Carlos Santos",
+      "role": "Funcionario",
+      "email": "carlos@barbeariaelite.com",
+      "phone": "(11) 92345-6789",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "fc17192b-4795-4b98-931c-75399f127961",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Pedro Oliveira",
+      "role": "Funcionario",
+      "email": "pedro@barbeariaelite.com",
+      "phone": "(11) 93456-7890",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "f76a5c58-4b06-4052-bd96-3e0fa81f7a00",
+      "establishmentId": "ce3afe3b-906f-47cb-a026-6ca51d2dca38",
+      "name": "Mariana Souza",
+      "role": "Administrador",
+      "email": "mariana@boamesa.com",
+      "phone": "(11) 99876-5432",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    }
+  ],
+  "clients": [
+    {
+      "id": "6c13e585-a1ef-4c2f-bc9a-7669eb75d5a2",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Ricardo Alves",
+      "email": "ricardo@email.com",
+      "phone": "(11) 99876-5432",
+      "notes": "",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "5b247b7d-a8ef-4919-b051-1944eafebfc8",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Marcelo Souza",
+      "email": "marcelo@email.com",
+      "phone": "(11) 98765-4321",
+      "notes": "",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "6ecae19e-c3f4-438a-8295-03161615a76d",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "name": "Anderson Lima",
+      "email": "anderson@email.com",
+      "phone": "(11) 97654-3210",
+      "notes": "",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "7c16f7ab-a259-4eb1-ad86-3539912707d1",
+      "establishmentId": "ce3afe3b-906f-47cb-a026-6ca51d2dca38",
+      "name": "Fabiana Costa",
+      "email": "fabiana@email.com",
+      "phone": "(11) 94455-6677",
+      "notes": "",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    }
+  ],
+  "services": [
+    {
+      "id": "ba216dae-a71b-4b5f-87e6-84a2315b0d91",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "category": "Cabelo",
+      "name": "Corte de Cabelo",
+      "description": "Corte masculino classico ou moderno",
+      "price": 45,
+      "durationMinutes": 40,
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "dd3d1b95-b9ee-434f-acc6-bdb0531ac4ca",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "category": "Barba",
+      "name": "Barba",
+      "description": "Modelagem e acabamento de barba",
+      "price": 30,
+      "durationMinutes": 30,
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "227eb353-0727-453e-84f8-f71902b7c5e8",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "category": "Combo",
+      "name": "Corte + Barba",
+      "description": "Combo completo de corte e barba",
+      "price": 65,
+      "durationMinutes": 60,
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "fb2d06d3-3279-4d95-a206-24405dadbe2d",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "category": "Cabelo",
+      "name": "Pezinho",
+      "description": "Acabamento da nuca e laterais",
+      "price": 15,
+      "durationMinutes": 15,
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "05bb8248-835f-4060-bd4f-f080502ad731",
+      "establishmentId": "ce3afe3b-906f-47cb-a026-6ca51d2dca38",
+      "category": "Pizzaria",
+      "name": "Pizza Margherita",
+      "description": "Pizza classica com mussarela e manjericao",
+      "price": 45,
+      "durationMinutes": 30,
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "94450970-ce64-441f-92b2-162e03ea706b",
+      "establishmentId": "ce3afe3b-906f-47cb-a026-6ca51d2dca38",
+      "category": "Pizzaria",
+      "name": "Borda Recheada",
+      "description": "Borda especial com catupiry e ervas",
+      "price": 15,
+      "durationMinutes": 10,
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    }
+  ],
+  "appointments": [
+    {
+      "id": "8a01b6cd-12f1-4439-813b-f19e6e42ba43",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "clientId": "6c13e585-a1ef-4c2f-bc9a-7669eb75d5a2",
+      "employeeId": "3dc39dc4-1549-4cdf-96aa-131b08d2c41e",
+      "serviceId": "ba216dae-a71b-4b5f-87e6-84a2315b0d91",
+      "serviceName": "Corte de Cabelo",
+      "dateTime": "2026-07-21T11:00:00",
+      "total": 45,
+      "status": "Em Andamento",
+      "source": "admin",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "ba05b1ef-f0ee-4112-a574-4e157368ddde",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "clientId": "5b247b7d-a8ef-4919-b051-1944eafebfc8",
+      "employeeId": "489358db-d7fe-4aec-aecc-4d2e3abe5f96",
+      "serviceId": "227eb353-0727-453e-84f8-f71902b7c5e8",
+      "serviceName": "Corte + Barba",
+      "dateTime": "2026-07-21T12:30:00",
+      "total": 65,
+      "status": "Pendente",
+      "source": "admin",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "7e818a2f-ca11-439a-82e3-7b97e92abfe7",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "clientId": "6ecae19e-c3f4-438a-8295-03161615a76d",
+      "employeeId": "fc17192b-4795-4b98-931c-75399f127961",
+      "serviceId": "dd3d1b95-b9ee-434f-acc6-bdb0531ac4ca",
+      "serviceName": "Barba",
+      "dateTime": "2026-07-22T07:00:00",
+      "total": 30,
+      "status": "Cancelado",
+      "source": "admin",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "3c7587d8-6c08-4e53-8578-da812612649a",
+      "establishmentId": "4db7405a-7a2c-4110-b50f-b5103e28730c",
+      "clientId": "6c13e585-a1ef-4c2f-bc9a-7669eb75d5a2",
+      "employeeId": null,
+      "serviceId": "227eb353-0727-453e-84f8-f71902b7c5e8",
+      "serviceName": "Corte + Barba",
+      "dateTime": "2026-07-22T18:44:00",
+      "total": 65,
+      "status": "Concluido",
+      "source": "portal",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    },
+    {
+      "id": "589b656f-1896-48a5-a22b-6d3082ba7446",
+      "establishmentId": "ce3afe3b-906f-47cb-a026-6ca51d2dca38",
+      "clientId": "7c16f7ab-a259-4eb1-ad86-3539912707d1",
+      "employeeId": "f76a5c58-4b06-4052-bd96-3e0fa81f7a00",
+      "serviceId": "05bb8248-835f-4060-bd4f-f080502ad731",
+      "serviceName": "Pizza Margherita",
+      "dateTime": "2026-07-22T19:30:00",
+      "total": 45,
+      "status": "Pendente",
+      "source": "admin",
+      "createdAt": "2026-08-03T20:16:35.332Z"
+    }
+  ],
+  "cashClosings": []
+}

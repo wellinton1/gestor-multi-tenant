@@ -196,6 +196,9 @@ para aplicar.
 | `ADMIN_PASSWORD`  | Senha do administrador (so tem efeito na primeira execucao)                |
 | `SEED_DEMO_DATA`  | `true`/`false` - cria o estabelecimento de exemplo na primeira execucao     |
 | `COOKIE_SECURE`   | Deixe `true` somente se estiver usando HTTPS                               |
+| `BACKUP_AUTO_ENABLED` | `true`/`false` - backup automatico do site inteiro em .zip (padrao: `true`) |
+| `BACKUP_INTERVAL_HOURS` | Intervalo do backup automatico em horas (padrao: `6`)                 |
+| `BACKUP_MAX_FILES` | Quantos backups automaticos manter antes de apagar os mais antigos (padrao: `30`) |
 
 ### Exemplos de `.env`
 
@@ -292,6 +295,23 @@ salvo la e o mesmo que foi usado para criar a conta).
 Edite `/opt/gestor-multi-tenant/.env` (porta) ou o arquivo do Nginx em
 `/etc/nginx/sites-available/gestor-multi-tenant` (dominio), depois rode
 `sudo bash scripts/restart.sh` e/ou `sudo systemctl restart nginx`.
+
+---
+
+## Backups pelo painel (administrador)
+
+Alem do `scripts/backup.sh`, o proprio sistema faz backup **do site inteiro**
+(codigo + configuracoes + banco `db.json`) em um `.zip` salvo em
+`app/data/backups/`:
+
+- **Automatico**: a cada 6 horas (configuravel em `.env` via
+  `BACKUP_INTERVAL_HOURS`), mantendo os 30 mais recentes (`BACKUP_MAX_FILES`);
+- **Manual**: no painel, menu **Backups** (visivel so para o administrador da
+  plataforma) -> botao "Criar Backup Agora";
+- **Restaurar / Baixar / Excluir**: qualquer backup pode ser restaurado a
+  qualquer momento pela mesma tela. Ao restaurar, o sistema cria antes um
+  snapshot "Pre-restauro" automaticamente; reinicie o servidor depois da
+  restauracao para que o codigo restaurado entre em vigor.
 
 ---
 

@@ -33,6 +33,8 @@ const passwordRoutes = require('./src/routes/password');
 const securityRoutes = require('./src/routes/security');
 const setupRoutes = require('./src/routes/setup');
 const paymentsRoutes = require('./src/routes/payments');
+const backupsRoutes = require('./src/routes/backups');
+const { startBackupScheduler } = require('./src/utils/backup');
 
 const app = express();
 const DEFAULT_PORT = Number(process.env.PORT) || 3000;
@@ -77,7 +79,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
-      styleSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+      // 'unsafe-inline': o frontend usa atributos style= em toda parte (padrao
+      // do projeto). NAO adicionar nonce aqui — a presenca de nonce/hash anula
+      // o 'unsafe-inline' segundo a spec do CSP.
+      styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
@@ -132,7 +137,7 @@ const portalLimiter = rateLimit({
   legacyHeaders: false
 });
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
 const SESSION_SECRET = process.env.SESSION_SECRET;
@@ -144,9 +149,20 @@ if (!SESSION_SECRET || SESSION_SECRET === 'troque-este-valor-para-um-texto-aleat
   console.warn('AVISO: SESSION_SECRET nao configurado no .env! Usando valor gerado automaticamente (sessoes serao perdidas ao reiniciar).');
 }
 
+// Sessoes persistidas em disco: sobrevivem a reinicios do servidor
+// (sem isso, cada restart/redeploy desloga todos os usuarios).
+const FileStore = require('session-file-store')(session);
+const SESSIONS_DIR = path.join(__dirname, 'data', 'sessions');
+
 app.use(
   session({
     name: 'gestor.sid',
+    store: new FileStore({
+      path: SESSIONS_DIR,
+      logFn: () => {}, // silencia logs verbosos da biblioteca
+      ttl: 60 * 60 * 24 * 7, // 7 dias, igual ao maxAge do cookie
+      reapInterval: 60 * 60 // limpa sessoes expiradas a cada 1h
+    }),
     secret: SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
     resave: false,
     saveUninitialized: false,
@@ -216,6 +232,9 @@ runSeed().catch((err) => {
   console.error('Erro durante execucao do seed:', err.message);
 });
 
+// Backup automatico do site inteiro (.zip em app/data/backups, default a cada 6h)
+startBackupScheduler();
+
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/setup', authLimiter, setupRoutes);
@@ -231,6 +250,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/portal', portalLimiter, portalRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/backups', backupsRoutes);
 
 // Static frontend com cache-control
 app.use(express.static(path.join(__dirname, 'public'), {

@@ -47,3 +47,4 @@ tmp/
 # Backup files
 *.bak
 *.backup
+data/sessions/

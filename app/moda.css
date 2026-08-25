@@ -1,0 +1,144 @@
+/* ============================================================================
+   TEMA: MODA — editorial, serifada, arejado, preto premium.
+   Identidade: revista de moda, e-commerce de grife, atelier.
+   Nao usar: gradiente roxo, fontes neon, cantos super arredondados.
+   ============================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+:root,
+body[data-theme="moda"] {
+  /* Tipografia — aqui esta a identidade principal */
+  --font-display: "Cormorant Garamond", "Times New Roman", Georgia, serif;
+  --font-body: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Type scale ajustado p/ serif display grandes */
+  --fs-display: 72px;
+  --fs-h1: 48px;
+  --fs-h2: 32px;
+  --fs-h3: 24px;
+  --fs-h4: 20px;
+  --fs-body: 15px;
+  --lh-tight: 1.05;       /* serifas necesita tighter leading */
+  --lh-snug: 1.25;
+  --lh-normal: 1.6;
+  --tracking-tight: -0.025em;
+  --tracking-caps: 0.18em; /* caps mais arejadas em moda */
+
+  /* Paleta — preto premium + areia/creme. Sem roxo, sem azul. */
+  --bg: #faf7f2;            /* creme quente, nao branco frio */
+  --card-bg: #ffffff;
+  --border: #e7e1d8;
+  --text: #1a1814;          /* quase preto, levemente aquecido */
+  --text-muted: #6b6358;
+
+  /* Accent preto + champagne — assinatura de grife */
+  --accent: #1a1814;        /* preto profundo (uso p/ botoes/links) */
+  --accent-dark: #000;
+  --accent-light: #4a443c;
+  --accent-rgb: 26, 24, 20;
+
+  /* Cantos afiados — moda e afiado, nao arredondado */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius: 0px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+  --radius-2xl: 4px;
+
+  /* Espacamento arejado (moda respira) */
+  --space-2: 10px;
+  --space-3: 16px;
+  --space-4: 20px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 40px;
+  --space-10: 56px;
+  --space-12: 72px;
+  --space-16: 96px;
+
+  /* Shadows mininas — moda nao tem sombra branquinha de SaaS */
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 0 var(--border);
+  --shadow-md: 0 1px 0 var(--border);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.06), 0 1px 0 var(--border);
+  --shadow-xl: 0 24px 64px rgba(0,0,0,0.08);
+
+  /* Sidebar preta mate — nao gradiente roxo */
+  --sidebar-bg: #0a0908;
+  --sidebar-text: #f5f1ea;
+  --sidebar-nav: #8a7f70;
+  --sidebar-border: rgba(255, 250, 245, 0.06);
+
+  --btn-primary-bg: #1a1814;
+  --btn-primary-hover: #000;
+  --btn-secondary-bg: #fff;
+  --btn-secondary-hover: #faf7f2;
+  --input-bg: #fff;
+  --input-border: #1a1814;        /* borda preta fina - assinatura editorial */
+  --modal-bg: #fff;
+  --overlay-bg: rgba(10, 9, 8, 0.65);
+  --table-header-bg: #f5f1ea;
+
+  /* Decorativos unicos do tema */
+  --rule-width: 1px;       /* filetes finos */
+  --eyebrow: uppercase;   /* "秋气brow" caps com tracking alto */
+
+  /* Paleta validada p/ customizacao pelo dono (NUNCA cor livre) */
+  --palette-allowed:
+    "champagne" #c9a961,
+    "burgundy"  #7d2025,
+    "forest"    #2d4a3e,
+    "ink"       #1a1814,
+    "blush"     #d4a5a5;
+  --accent-override-default: "ink";
+}
+
+/* Moda dark — preto mate fundo + creme texto */
+[data-theme="dark"][data-theme-mode="moda"],
+body[data-theme="moda"][data-theme-appearance="dark"] {
+  --bg: #0a0908;
+  --card-bg: #141210;
+  --border: #2a2620;
+  --text: #f5f1ea;
+  --text-muted: #8a7f70;
+  --input-bg: #141210;
+  --btn-secondary-bg: #141210;
+  --table-header-bg: #0a0908;
+  --sidebar-bg: #000;
+  --sidebar-text: #f5f1ea;
+  --overlay-bg: rgba(0,0,0,0.8);
+}
+
+/* Microinteracoes — quem entrou em moda sente "acabamento de grife" */
+body[data-theme="moda"] .btn {
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+body[data-theme="moda"] .btn-primary:hover {
+  letter-spacing: 0.22em;
+}
+
+body[data-theme="moda"] h1,
+body[data-theme="moda"] h2,
+body[data-theme="moda"] .portal-hero h1 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+body[data-theme="moda"] .niche-tag {
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 11px;
+  color: var(--text-muted);
+  border: 1px solid var(--text);
+  padding: 4px 12px;
+  border-radius: 0;
+  background: transparent;
+}

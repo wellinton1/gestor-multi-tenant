@@ -335,7 +335,6 @@ function render() {
 // Paginas globais acessiveis sem estabelecimento selecionado (so admin da plataforma).
 function renderRouteWithoutEstablishment() {
   const globalPages = {
-    '#/backups': renderBackupsPage,
     '#/senhas': renderSenhasPage,
     '#/seguranca': renderSegurancaPage
   };
@@ -482,7 +481,6 @@ async function renderSelector() {
       <div class="selector-grid" id="selector-grid"></div>
       <div class="selector-actions">
         ${isGlobalAdmin(currentUser) ? `
-          <a href="#/backups" class="btn btn-secondary">${ICONS.archive} Backups</a>
           <a href="#/senhas" class="btn btn-secondary">${ICONS.lock} Usuarios e Senhas</a>
           <a href="#/seguranca" class="btn btn-secondary">${ICONS.shield} Inspecao de Seguranca</a>
         ` : ''}
@@ -2411,114 +2409,21 @@ function formatFileSize(bytes) {
   return n + ' B';
 }
 
-const BACKUP_TYPE_LABEL = { manual: 'Manual', auto: 'Automatico', 'pre-restore': 'Pre-restauro', upload: 'Enviado' };
-let backupConfigCache = null;
-const BACKUP_INTERVAL_OPTIONS = [1, 2, 4, 6, 12, 24, 48];
-
-async function uploadBackupFile(file) {
-  const csrfToken = getCsrfToken();
-  const res = await fetch('/api/backups/upload', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: Object.assign({ 'Content-Type': 'application/zip' }, csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-    body: file
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((data && data.error) || 'Falha no envio.');
-  return data;
-}
-
-// Barra de acoes exibida apos escolher um arquivo no seletor:
-// [Enviar e Restaurar] [Somente Enviar] [Cancelar]
-function renderUploadStrip(file) {
-  const strip = document.getElementById('backup-upload-strip');
-  if (!strip) return;
-  if (!file) { strip.innerHTML = ''; return; }
-  if (!/\.zip$/i.test(file.name)) {
-    strip.innerHTML = '';
-    return toast('Selecione um arquivo .zip de backup.', true);
-  }
-  strip.innerHTML = `
-    <div class="card settings-card" style="border:2px dashed var(--accent,#6366f1); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <strong>${escapeHtml(file.name)}</strong>
-      <span class="cell-muted">${formatFileSize(file.size)}</span>
-      <button class="btn btn-primary" id="upload-restore-btn">${ICONS.rotateCw} Enviar e Restaurar</button>
-      <button class="btn btn-secondary" id="upload-only-btn">${ICONS.upload} Somente Enviar</button>
-      <button class="btn btn-secondary" id="upload-cancel-btn">${ICONS.close} Cancelar</button>
-    </div>
-  `;
-  document.getElementById('upload-cancel-btn').addEventListener('click', () => renderUploadStrip(null));
-  document.getElementById('upload-only-btn').addEventListener('click', async (e) => {
-    e.currentTarget.disabled = true;
-    try {
-      await uploadBackupFile(file);
-      toast(`Backup "${file.name}" recebido e adicionado a lista.`);
-    } catch (err) {
-      toast(err.message, true);
-    }
-    renderUploadStrip(null);
-    loadBackupsList();
-  });
-  document.getElementById('upload-restore-btn').addEventListener('click', async (e) => {
-    e.currentTarget.disabled = true;
-    try {
-      const data = await uploadBackupFile(file);
-      await api('POST', `/api/backups/${encodeURIComponent(data.filename)}/restore`);
-      toast(`"${file.name}" enviado e restaurado! Reinicie o servidor para aplicar todo o codigo restaurado.`);
-    } catch (err) {
-      toast(err.message, true);
-    }
-    renderUploadStrip(null);
-    loadBackupsList();
-  });
-}
-
-function renderBackupsControls() {
-  const statusEl = document.getElementById('backups-status');
-  if (!statusEl || !backupConfigCache) return;
-  const cfg = backupConfigCache;
-  const options = [...new Set([...BACKUP_INTERVAL_OPTIONS, cfg.intervalHours])].sort((a, b) => a - b);
-  statusEl.innerHTML = `
-    <span class="pill ${cfg.autoEnabled ? 'pill-concluido' : 'pill-pendente'}">${cfg.autoEnabled ? `${ICONS.clock} Automatico a cada ${cfg.intervalHours}h` : `${ICONS.pause} Automatico PAUSADO`}</span>
-    <label style="display:flex;align-items:center;gap:6px;">Intervalo
-      <select id="backup-interval-select" class="form-input" style="width:auto;padding:4px 8px;">
-        ${options.map((h) => `<option value="${h}" ${h === cfg.intervalHours ? 'selected' : ''}>${h >= 24 ? (h / 24) + ' dia(s)' : h + ' h'}</option>`).join('')}
-      </select>
-    </label>
-    <button class="btn btn-secondary" id="backup-save-settings">Salvar</button>
-    <button class="btn ${cfg.autoEnabled ? 'btn-danger' : 'btn-primary'}" id="backup-toggle-auto">${cfg.autoEnabled ? ICONS.pause : ICONS.play} ${cfg.autoEnabled ? 'Pausar Automatico' : 'Reativar Automatico'}</button>
-    <span class="cell-muted">Retencao automatica: ate ${cfg.maxFiles} backups &middot; Total: <strong id="backups-total-label">${formatFileSize(0)}</strong></span>
-  `;
-
-  document.getElementById('backup-save-settings').addEventListener('click', async () => {
-    const hours = Number(document.getElementById('backup-interval-select').value);
-    try {
-      await api('PUT', '/api/backups/settings', { intervalHours: hours });
-      toast(`Backup automatico configurado para rodar a cada ${hours}h.`);
-    } catch (err) { toast(err.message, true); }
-    loadBackupsList();
-  });
-
-  document.getElementById('backup-toggle-auto').addEventListener('click', async () => {
-    const novoEstado = !backupConfigCache.autoEnabled;
-    try {
-      await api('PUT', '/api/backups/settings', { autoEnabled: novoEstado });
-      toast(novoEstado ? 'Backup automatico reativado.' : 'Backup automatico pausado. Voce ainda pode criar backups manuais.');
-    } catch (err) { toast(err.message, true); }
-    loadBackupsList();
-  });
-}
+const BACKUP_TYPE_LABEL = { manual: 'Manual', auto: 'Automatico', 'pre-restore': 'Pre-restauro' };
 
 async function loadBackupsList() {
   const container = document.getElementById('backups-list-container');
+  const statusEl = document.getElementById('backups-status');
   if (!container) return;
   container.innerHTML = '<div class="loading-state">Carregando backups...</div>';
   try {
     const data = await api('GET', '/api/backups');
-    backupConfigCache = data.config;
-    renderBackupsControls();
-    const totalLabel = document.getElementById('backups-total-label');
-    if (totalLabel) totalLabel.textContent = formatFileSize(data.totalSize);
+    if (statusEl) {
+      statusEl.innerHTML = `
+        <span class="pill ${data.config.autoEnabled ? 'pill-pago' : 'pill-pendente'}">${data.config.autoEnabled ? `${ICONS.clock} Automatico a cada ${data.config.intervalHours}h` : 'Automatico desativado'}</span>
+        <span class="cell-muted">Retencao automatica: ate ${data.config.maxFiles} backups &middot; Total: <strong>${formatFileSize(data.totalSize)}</strong> em ${data.backups.length} arquivo(s)</span>
+      `;
+    }
     if (!data.backups.length) {
       container.innerHTML = '<div class="empty-state">Nenhum backup ainda. Clique em "Criar Backup Agora".</div>';
       return;
@@ -2616,49 +2521,27 @@ async function renderBackupsPage() {
         <h1>${ICONS.archive} Backups</h1>
         <p>Site inteiro (.zip): codigo, configuracoes e banco de dados</p>
       </div>
-      <button class="btn btn-secondary" id="upload-backup-btn">${ICONS.upload} Enviar Backup (.zip)</button>
       <button class="btn btn-primary" id="create-backup-btn">${ICONS.archive} Criar Backup Agora</button>
     </div>
-    <div id="backup-upload-strip"></div>
     <div class="card settings-card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <div id="backups-status" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span class="cell-muted">Carregando status...</span></div>
     </div>
-    <div class="hint-box">O backup automatico roda sozinho no intervalo escolhido e mantem os mais recentes — use "Pausar" para interromper (os backups manuais continuam disponiveis). Pode tambem ENVIAR um .zip de backup salvo em outro lugar e restaura-lo aqui. Restaurar substitui os arquivos atuais pelos do zip: um "Pre-restauro" e criado automaticamente antes, e reiniciar o servidor depois garante que o codigo restaurado entre em vigor.</div>
+    <div class="hint-box">O backup automatico roda sozinho a cada periodo e mantem os mais recentes. Restaurar substitui os arquivos atuais pelos do zip — um "Pre-restauro" e criado automaticamente antes, e reiniciar o servidor depois garante que o codigo restaurado entre em vigor.</div>
     <div class="card settings-card" id="backups-list-container"></div>
   `;
 
-  // Seletor de arquivo criado via JS e escondido por CSSOM (nao depende de
-  // style inline no HTML) — evita o input visivel "Nenhum arquivo escolhido".
-  document.getElementById('upload-backup-btn').addEventListener('click', () => {
-    let picker = document.getElementById('backup-file-picker');
-    if (!picker) {
-      picker = document.createElement('input');
-      picker.type = 'file';
-      picker.accept = '.zip,application/zip';
-      picker.id = 'backup-file-picker';
-      picker.style.display = 'none';
-      document.body.appendChild(picker);
-    }
-    picker.onchange = () => {
-      const file = picker.files && picker.files[0];
-      picker.value = '';
-      renderUploadStrip(file || null);
-    };
-    picker.click();
-  });
-
-  const createBtn = document.getElementById('create-backup-btn');
-  createBtn.addEventListener('click', async () => {
-    createBtn.disabled = true;
-    createBtn.innerHTML = `${ICONS.archive} Criando...`;
+  document.getElementById('create-backup-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = `${ICONS.archive} Criando...`;
     try {
       await api('POST', '/api/backups');
       toast('Backup criado com sucesso!');
     } catch (err) {
       toast(err.message, true);
     }
-    createBtn.disabled = false;
-    createBtn.innerHTML = `${ICONS.archive} Criar Backup Agora`;
+    btn.disabled = false;
+    btn.innerHTML = `${ICONS.archive} Criar Backup Agora`;
     loadBackupsList();
   });
 
@@ -2797,9 +2680,8 @@ async function loadAdminUsers() {
               if (globalUser) {
                 accessCell = '<span class="access-badge access-global" title="Acesso a todos os estabelecimentos">Global</span>';
               } else {
-                const allowedIds = Array.isArray(user.allowedEstablishmentIds) ? user.allowedEstablishmentIds : [];
                 const matchedNames = ests
-                  .filter((est) => allowedIds.includes(est.id))
+                  .filter((est) => user.allowedEstablishmentIds.includes(est.id))
                   .map((est) => est.name);
                 accessCell = matchedNames.length > 0
                   ? `<div class="access-chips">${matchedNames.map(name => `<span class="access-chip" title="${escapeHtml(name)}">${escapeHtml(name)}</span>`).join('')}</div>`

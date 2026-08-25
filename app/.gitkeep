@@ -1,0 +1,2 @@
+Este arquivo existe apenas para garantir que a pasta "data" seja criada.
+O arquivo db.json sera gerado automaticamente aqui na primeira vez que o servidor rodar.
