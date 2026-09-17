@@ -322,7 +322,32 @@ window.addEventListener('hashchange', () => {
 function render() {
   if (!currentUser) {
     if (setupNeeded) return renderSetup();
+    // Erros vindos do callback Google OAuth (?google_error=1, ?google_2fa=1, ?google_error=not_configured)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const gErr = params.get('google_error');
+      const g2fa = params.get('google_2fa');
+      if (gErr || g2fa) {
+        // Limpa a querystring para nao reexibir o erro no refresh
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (g2fa) {
+          // Conta Google com 2FA: abre direto o modal de codigo (sem senha).
+          renderLogin();
+          // setTimeout: garante que o DOM do login montou antes do modal.
+          setTimeout(showGoogle2faModal, 50);
+          return;
+        }
+        if (gErr === 'not_configured') return renderLogin('Login com Google nao configurado no servidor (GOOGLE_* no .env).');
+        return renderLogin('Falha no login com Google. Tente novamente.');
+      }
+    } catch (e) { /* ignore */ }
     return renderLogin();
+  }
+
+  // Cadastro pendente (login Google sem loja associada): mostra tela de
+  // aguardando aprovacao. O admin associa a uma loja na pagina de Senhas.
+  if (currentUser.pendingApproval) {
+    return renderPendingApproval();
   }
 
   if (!currentEstablishment) {
@@ -330,6 +355,44 @@ function render() {
   }
 
   return renderAppShell();
+}
+
+// Tela para usuarios que se cadastraram (ex: via Google) mas ainda nao
+// foram associados a nenhum estabelecimento pelo administrador.
+function renderPendingApproval() {
+  const currentTheme = getTheme();
+  root.innerHTML = `
+    <div class="centered-screen">
+      <button class="top-theme-toggle" id="pending-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
+      <div class="login-card" style="text-align:center;">
+        <div class="brand-icon">${ICONS.clock}</div>
+        <h1>Cadastro recebido!</h1>
+        <p class="subtitle">Aguardando aprovacao do administrador</p>
+        <div class="hint-box" style="text-align:left;">
+          Sua conta (<strong>${escapeHtml(currentUser.email)}</strong>) foi criada com sucesso.
+          Para comecar a usar o sistema, o administrador precisa associar seu usuario a um estabelecimento.
+          <br><br>
+          Assim que a associacao for feita, entre novamente para acessar o painel.
+        </div>
+        <button class="btn btn-secondary" id="pending-logout-btn" style="margin-top:16px;">Sair</button>
+        <button class="btn btn-primary" id="pending-refresh-btn" style="margin-top:12px;">Ja fui aprovado, entrar</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('pending-theme-toggle').addEventListener('click', toggleTheme);
+  document.getElementById('pending-logout-btn').addEventListener('click', logout);
+  document.getElementById('pending-refresh-btn').addEventListener('click', async () => {
+    try {
+      currentUser = await api('GET', '/api/auth/me');
+      if (currentUser.pendingApproval) {
+        toast('Seu cadastro ainda esta aguardando aprovacao.', true);
+      }
+      render();
+    } catch (e) {
+      currentUser = null;
+      render();
+    }
+  });
 }
 
 // Paginas globais acessiveis sem estabelecimento selecionado (so admin da plataforma).
@@ -407,6 +470,8 @@ function renderSetup(errorMsg) {
 // ================= LOGIN =================
 function renderLogin(errorMsg) {
   const currentTheme = getTheme();
+  const googleIcon = '<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>';
+  
   root.innerHTML = `
     <div class="centered-screen">
       <button class="top-theme-toggle" id="login-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
@@ -426,27 +491,166 @@ function renderLogin(errorMsg) {
           </div>
           <button type="submit" class="btn btn-primary">Entrar</button>
         </form>
-        <div class="hint-box">Credenciais padrao configuradas no arquivo .env do servidor (ADMIN_EMAIL / ADMIN_PASSWORD).</div>
+        <div class="divider">ou continue com</div>
+        <button type="button" class="btn btn-secondary btn-google" id="google-login-btn" style="display:none;">
+          ${googleIcon} Continuar com Google
+        </button>
       </div>
     </div>
   `;
   document.getElementById('login-theme-toggle').addEventListener('click', toggleTheme);
+  
+  // Check if Google OAuth is configured
+  checkGoogleOAuthConfig().then(configured => {
+    const btn = document.getElementById('google-login-btn');
+    if (btn) btn.style.display = configured ? 'inline-flex' : 'none';
+  });
+  
   document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    try {
-      currentUser = await api('POST', '/api/auth/login', {
-        email: fd.get('email'),
-        password: fd.get('password')
-      });
-      if (currentUser.establishmentId) {
-        currentEstablishment = await api('GET', '/api/establishments/current');
-      }
-      render();
-    } catch (err) {
-      renderLogin(err.message);
-    }
+    await handleLogin({
+      email: fd.get('email'),
+      password: fd.get('password')
+    });
   });
+  
+  document.getElementById('google-login-btn').addEventListener('click', () => {
+    window.location.href = '/api/auth/google';
+  });
+}
+
+async function handleLogin(credentials) {
+  try {
+    const result = await api('POST', '/api/auth/login', credentials);
+    if (result.requireTwoFactor) {
+      // Mostra modal de 2FA
+      showTwoFactorModal(result.userId, credentials);
+      return;
+    }
+    currentUser = result;
+    if (currentUser.establishmentId) {
+      currentEstablishment = await api('GET', '/api/establishments/current');
+    }
+    render();
+  } catch (err) {
+    renderLogin(err.message);
+  }
+}
+
+function showTwoFactorModal(userId, originalCredentials) {
+  const bodyHtml = `
+    <form id="twofactor-form">
+      <div class="form-field">
+        <label>Código do Autenticador</label>
+        <input type="text" name="twoFactorToken" required autocomplete="one-time-code" placeholder="123456" style="text-align:center;letter-spacing:4px;font-size:18px;" maxlength="6" />
+        <small>Digite o código de 6 dígitos do Google Authenticator, Authy, etc.</small>
+      </div>
+      <div class="form-field">
+        <label>Ou código de backup</label>
+        <input type="text" name="backupCode" placeholder="ABCD1234" style="text-transform:uppercase;" />
+        <small>Use um dos códigos de backup se não tiver acesso ao autenticador.</small>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-2fa">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Verificar</button>
+      </div>
+    </form>
+  `;
+  showModal('Autenticação de Dois Fatores', bodyHtml, (overlay) => {
+    overlay.querySelector('#cancel-2fa').addEventListener('click', () => {
+      closeModal();
+      renderLogin(); // Volta para tela de login
+    });
+    
+    overlay.querySelector('#twofactor-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const twoFactorToken = fd.get('twoFactorToken') || fd.get('backupCode');
+      if (!twoFactorToken) return;
+      
+      try {
+        currentUser = await api('POST', '/api/auth/login', {
+          ...originalCredentials,
+          twoFactorToken
+        });
+        closeModal();
+        if (currentUser.establishmentId) {
+          currentEstablishment = await api('GET', '/api/establishments/current');
+        }
+        render();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
+// Login Google + 2FA: o callback deixou a sessao em estado pendente
+// (pendingGoogle2fa). Exibe o campo de codigo SEM pedir senha — conta
+// Google pode nem ter senha cadastrada.
+async function showGoogle2faModal() {
+  let pending = null;
+  try {
+    pending = await api('GET', '/api/auth/google/2fa-pending');
+  } catch (err) {
+    toast(err.message || 'Verificacao 2FA expirada. Entre com Google novamente.', true);
+    return renderLogin();
+  }
+  const bodyHtml = `
+    <form id="google-2fa-form">
+      <p class="subtitle" style="margin-top:0;">Conta <strong>${escapeHtml(pending.email || '')}</strong>: digite o codigo do autenticador para concluir o login.</p>
+      <div class="form-field">
+        <label>Código do Autenticador</label>
+        <input type="text" name="twoFactorToken" required autocomplete="one-time-code" placeholder="123456" style="text-align:center;letter-spacing:4px;font-size:18px;" maxlength="6" />
+        <small>Digite o código de 6 dígitos do Google Authenticator, Authy, etc.</small>
+      </div>
+      <div class="form-field">
+        <label>Ou código de backup</label>
+        <input type="text" name="backupCode" placeholder="ABCD1234" style="text-transform:uppercase;" />
+        <small>Use um dos códigos de backup se não tiver acesso ao autenticador.</small>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-google-2fa">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Verificar e entrar</button>
+      </div>
+    </form>
+  `;
+  showModal('Autenticação de Dois Fatores', bodyHtml, (overlay) => {
+    overlay.querySelector('#cancel-google-2fa').addEventListener('click', async () => {
+      try { await api('POST', '/api/auth/logout'); } catch (e) {}
+      closeModal();
+      renderLogin();
+    });
+
+    overlay.querySelector('#google-2fa-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const token = fd.get('twoFactorToken') || fd.get('backupCode');
+      if (!token) return;
+
+      try {
+        currentUser = await api('POST', '/api/auth/google/2fa-verify', { token });
+        closeModal();
+        if (currentUser.establishmentId) {
+          currentEstablishment = await api('GET', '/api/establishments/current');
+        }
+        render();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
+async function checkGoogleOAuthConfig() {
+  try {
+    const res = await fetch('/api/auth/google-config');
+    const data = await res.json();
+    return data.configured === true;
+  } catch (e) {
+    return false;
+  }
 }
 
 async function logout() {
@@ -520,7 +724,7 @@ async function renderSelector() {
       ${currentUser && currentUser.role === 'admin' ? `<a class="create-user-link" data-id="${est.id}" href="#">Criar acesso</a>` : ''}
     </div>
   `).join('') + `
-    ${currentUser && currentUser.role === 'admin' ? `
+    ${isGlobalAdmin(currentUser) ? `
     <div class="tenant-card new-tenant" id="new-tenant-card">
       <div class="plus-icon">${ICONS.plus}</div>
       <strong>Novo Estabelecimento</strong>
@@ -603,7 +807,8 @@ async function renderSelector() {
       openCreateUserModal(est);
     });
   });
-  document.getElementById('new-tenant-card').addEventListener('click', openNewEstablishmentModal);
+  const newTenantCard = document.getElementById('new-tenant-card');
+  if (newTenantCard) newTenantCard.addEventListener('click', openNewEstablishmentModal);
   document.getElementById('selector-logout').addEventListener('click', logout);
   document.getElementById('selector-theme-toggle').addEventListener('click', toggleTheme);
 }
@@ -655,10 +860,16 @@ function renderSelectorPublic() {
 }
 
 function openTenantLoginModal(establishment) {
+  const googleIcon = '<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>';
+  
   const bodyHtml = `
     <form id="tenant-login-form">
       <div class="form-field"><label>Email *</label><input type="email" name="email" required /></div>
       <div class="form-field"><label>Senha *</label><input type="password" name="password" required /></div>
+      <div class="divider">ou continue com</div>
+      <button type="button" class="btn btn-secondary btn-google" id="tenant-google-login-btn" style="display:none;">
+        ${googleIcon} Continuar com Google
+      </button>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" id="cancel-tenant-login">Cancelar</button>
         <button type="submit" class="btn btn-primary">Entrar em ${escapeHtml(establishment.name)}</button>
@@ -667,15 +878,33 @@ function openTenantLoginModal(establishment) {
   `;
   showModal(`Login para ${escapeHtml(establishment.name)}`, bodyHtml, (overlay) => {
     overlay.querySelector('#cancel-tenant-login').addEventListener('click', closeModal);
+    
+    // Check if Google OAuth is configured
+    checkGoogleOAuthConfig().then(configured => {
+      const btn = overlay.querySelector('#tenant-google-login-btn');
+      if (btn) btn.style.display = configured ? 'inline-flex' : 'none';
+    });
+    
+    overlay.querySelector('#tenant-google-login-btn').addEventListener('click', () => {
+      window.location.href = `/api/auth/google?establishmentId=${establishment.id}`;
+    });
+    
     overlay.querySelector('#tenant-login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const credentials = {
+        email: fd.get('email'),
+        password: fd.get('password'),
+        establishmentId: establishment.id
+      };
       try {
-        currentUser = await api('POST', '/api/auth/login', {
-          email: fd.get('email'),
-          password: fd.get('password'),
-          establishmentId: establishment.id
-        });
+        const result = await api('POST', '/api/auth/login', credentials);
+        if (result.requireTwoFactor) {
+          closeModal();
+          showTwoFactorModal(result.userId, credentials);
+          return;
+        }
+        currentUser = result;
         if (currentUser.establishmentId) {
           currentEstablishment = await api('GET', '/api/establishments/current');
         }
@@ -2021,23 +2250,54 @@ async function renderConfiguracoesPage() {
       </div>
     </div>
     <div class="card settings-card">
-      <h3 style="margin:0 0 4px 0;font-size:17px;">${ICONS.creditCard} Pagamentos - AbacatePay</h3>
-      <p style="color:var(--text-muted);font-size:13px;margin:0 0 18px 0;">Configure sua API key para cobrar clientes via PIX e cartao diretamente nos agendamentos.</p>
-      <form id="abacatepay-form">
+      <h3 style="margin:0 0 4px 0;font-size:17px;">${ICONS.creditCard} Pagamentos (PIX & Cartão)</h3>
+      <p style="color:var(--text-muted);font-size:13px;margin:0 0 18px 0;">Configure o provedor de pagamentos para cobrar clientes via PIX e cartão diretamente nos agendamentos.</p>
+      <form id="payment-config-form">
         <div class="form-field">
-          <label>API Key</label>
-          <input type="password" name="abacatePayApiKey" id="abacatepay-key-input" placeholder="Cole sua API key aqui" />
+          <label>Provedor de Pagamento</label>
+          <select name="provider" id="payment-provider-select">
+            <option value="abacatepay">AbacatePay</option>
+            <option value="mercadopago">Mercado Pago</option>
+            <option value="asaas">Asaas</option>
+            <option value="generic">PIX Genérico (API Própria / Outra Instituição)</option>
+          </select>
+        </div>
+        <div class="form-field" id="provider-api-key-field">
+          <label>API Key / Access Token</label>
+          <input type="password" name="apiKey" id="payment-api-key-input" placeholder="Cole sua chave de API aqui" />
+        </div>
+        <div class="form-field" id="provider-base-url-field" style="display:none;">
+          <label>URL Base da API</label>
+          <input type="url" name="baseUrl" id="payment-base-url-input" placeholder="https://api.exemplo.com/v1" />
+          <small>Obrigatório apenas para provedor "PIX Genérico"</small>
+        </div>
+        <div class="form-field" id="provider-extra-headers-field" style="display:none;">
+          <label>Headers Extras (JSON)</label>
+          <textarea name="extraHeaders" id="payment-extra-headers-input" placeholder='{ "X-Custom-Header": "valor" }' rows="3"></textarea>
+          <small>Headers adicionais para autenticação customizada (apenas PIX Genérico)</small>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <button type="submit" class="btn btn-primary">Salvar API Key</button>
-          <button type="button" class="btn btn-secondary" id="abacatepay-remove-btn">Remover API Key</button>
-          <span id="abacatepay-status" style="font-size:13px;color:var(--text-muted);"></span>
+          <button type="submit" class="btn btn-primary">Salvar Configuração</button>
+          <button type="button" class="btn btn-secondary" id="payment-remove-btn">Remover Configuração</button>
+          <span id="payment-status" style="font-size:13px;color:var(--text-muted);"></span>
         </div>
       </form>
       <p style="margin-top:12px;font-size:12px;color:var(--text-muted);">
-        Obtenha sua API key em <a href="https://abacatepay.com" target="_blank" rel="noopener">abacatepay.com</a>
+        Provedores suportados: 
+        <a href="https://abacatepay.com" target="_blank" rel="noopener">AbacatePay</a>, 
+        <a href="https://mercadopago.com.br/developers" target="_blank" rel="noopener">Mercado Pago</a>, 
+        <a href="https://asaas.com/documentacao-api" target="_blank" rel="noopener">Asaas</a>, 
+        ou qualquer API PIX compatível (Genérico).
       </p>
     </div>
+    <div class="card settings-card">
+      <div class="page-header" style="align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div><h2>Cupons de Desconto</h2><p>Crie cupons para oferecer descontos percentuais ou fixos no portal do cliente</p></div>
+        <button class="btn btn-primary" id="new-coupon-btn">${ICONS.plus} Novo Cupom</button>
+      </div>
+      <div id="coupons-table-container"><div class="loading-state">Carregando cupons...</div></div>
+    </div>
+    ${currentUser && currentUser.role === 'admin' ? `
     <div class="card settings-card">
       <div class="page-header" style="align-items:flex-start;gap:12px;flex-wrap:wrap;">
         <div><h2>Usuarios do Estabelecimento</h2><p>Gerencie contas de acesso para este tenant</p></div>
@@ -2045,47 +2305,66 @@ async function renderConfiguracoesPage() {
       </div>
       <div id="users-table-container"><div class="loading-state">Carregando usuarios...</div></div>
     </div>
+    ` : ''}
   `;
   document.getElementById('open-portal-btn').addEventListener('click', () => window.open(portalUrl, '_blank'));
-  (async () => {
-    try {
-      const status = await api('GET', '/api/payments/api-key');
-      const statusEl = document.getElementById('abacatepay-status');
-      if (statusEl) {
-        statusEl.textContent = status.configured ? 'API key configurada (' + status.masked + ')' : 'Nao configurada';
-        statusEl.style.color = status.configured ? '#10b981' : 'var(--text-muted)';
-      }
-    } catch (e) { /* ignore */ }
-  })();
-  document.getElementById('abacatepay-form').addEventListener('submit', async (e) => {
+  
+  // Load payment providers for select
+  loadPaymentProviders();
+  
+  // Load payment config
+  loadPaymentConfig();
+
+  document.getElementById('payment-config-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const key = fd.get('abacatePayApiKey');
-    if (!key) return toast('Informe a API key.', true);
+    const provider = fd.get('provider');
+    const apiKey = fd.get('apiKey');
+    const baseUrl = fd.get('baseUrl');
+    const extraHeaders = fd.get('extraHeaders');
+    
+    if (!apiKey) return toast('Informe a chave da API.', true);
+    if (provider === 'generic' && !baseUrl) return toast('URL base é obrigatória para provedor genérico.', true);
+    
     try {
-      await api('PUT', '/api/payments/api-key', { apiKey: key });
-      toast('API key do AbacatePay salva.');
-      const statusEl = document.getElementById('abacatepay-status');
-      if (statusEl) {
-        statusEl.textContent = 'API key configurada (...' + key.slice(-6) + ')';
-        statusEl.style.color = '#10b981';
+      const payload = { provider, apiKey };
+      if (provider === 'generic') {
+        payload.baseUrl = baseUrl;
+        if (extraHeaders) payload.extraHeaders = extraHeaders;
       }
-      document.getElementById('abacatepay-key-input').value = '';
+      await api('PUT', '/api/payments/config', payload);
+      toast('Configuração de pagamento salva.');
+      loadPaymentConfig();
+      document.getElementById('payment-api-key-input').value = '';
     } catch (err) { toast(err.message, true); }
   });
-  document.getElementById('abacatepay-remove-btn').addEventListener('click', async () => {
-    if (!confirm('Remover a API key do AbacatePay? O pagamento PIX sera desativado no portal.')) return;
+
+  document.getElementById('payment-remove-btn').addEventListener('click', async () => {
+    if (!confirm('Remover a configuração de pagamento? O pagamento PIX/cartão será desativado no portal.')) return;
     try {
-      await api('DELETE', '/api/payments/api-key');
-      toast('API key removida.');
-      const statusEl = document.getElementById('abacatepay-status');
-      if (statusEl) {
-        statusEl.textContent = 'Nao configurada';
-        statusEl.style.color = 'var(--text-muted)';
-      }
-      document.getElementById('abacatepay-key-input').value = '';
+      await api('DELETE', '/api/payments/config');
+      toast('Configuração removida.');
+      loadPaymentConfig();
+      document.getElementById('payment-api-key-input').value = '';
+      document.getElementById('payment-base-url-input').value = '';
+      document.getElementById('payment-extra-headers-input').value = '';
     } catch (err) { toast(err.message, true); }
   });
+
+  // Provider select change handler
+  document.getElementById('payment-provider-select').addEventListener('change', (e) => {
+    const provider = e.target.value;
+    const baseUrlField = document.getElementById('provider-base-url-field');
+    const extraHeadersField = document.getElementById('provider-extra-headers-field');
+    if (provider === 'generic') {
+      baseUrlField.style.display = '';
+      extraHeadersField.style.display = '';
+    } else {
+      baseUrlField.style.display = 'none';
+      extraHeadersField.style.display = 'none';
+    }
+  });
+
   // Pausar / Reativar (somente admin da plataforma)
   const btnPause = document.getElementById('btn-pause-settings');
   const btnResume = document.getElementById('btn-resume-settings');
@@ -2131,10 +2410,323 @@ async function renderConfiguracoesPage() {
     } catch (err) { toast(err.message, true); }
   });
   document.getElementById('save-hours-btn').addEventListener('click', saveBusinessHours);
-  document.getElementById('new-user-btn').addEventListener('click', openNewUserModal);
+  // Secao de usuarios so existe para admins (operadores nao a veem).
+  const newUserBtn = document.getElementById('new-user-btn');
+  if (newUserBtn) {
+    newUserBtn.addEventListener('click', openNewUserModal);
+    loadEstablishmentUsers();
+  }
+  document.getElementById('new-coupon-btn').addEventListener('click', openNewCouponModal);
   setupAppearanceUI();
-  loadEstablishmentUsers();
   setupBusinessHoursUI();
+  loadCoupons();
+}
+
+// ---------- Pagamentos (Provedores) ----------
+async function loadPaymentProviders() {
+  try {
+    const res = await api('GET', '/api/payments/providers');
+    const select = document.getElementById('payment-provider-select');
+    if (select && res.providers) {
+      const currentValue = select.value;
+      select.innerHTML = res.providers.map(p => 
+        `<option value="${p.id}" ${p.id === currentValue ? 'selected' : ''}>${p.name}</option>`
+      ).join('');
+      // Trigger change to show/hide fields
+      select.dispatchEvent(new Event('change'));
+    }
+  } catch (err) {
+    console.error('Erro ao carregar provedores de pagamento:', err);
+  }
+}
+
+async function loadPaymentConfig() {
+  try {
+    const config = await api('GET', '/api/payments/config');
+    const statusEl = document.getElementById('payment-status');
+    const apiKeyInput = document.getElementById('payment-api-key-input');
+    const baseUrlInput = document.getElementById('payment-base-url-input');
+    const extraHeadersInput = document.getElementById('payment-extra-headers-input');
+    const providerSelect = document.getElementById('payment-provider-select');
+    
+    if (statusEl) {
+      statusEl.textContent = config.configured 
+        ? `Configurado (${config.provider}) - ${config.masked}` 
+        : 'Não configurado';
+      statusEl.style.color = config.configured ? '#10b981' : 'var(--text-muted)';
+    }
+    if (providerSelect && config.provider) {
+      providerSelect.value = config.provider;
+      providerSelect.dispatchEvent(new Event('change'));
+    }
+  } catch (err) {
+    console.error('Erro ao carregar config de pagamento:', err);
+  }
+}
+
+// ---------- Cupons ----------
+async function loadCoupons() {
+  const container = document.getElementById('coupons-table-container');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-state">Carregando cupons...</div>';
+  try {
+    const coupons = await api('GET', '/api/coupons');
+    renderCouponsTable(coupons);
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">Erro ao carregar cupons: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderCouponsTable(coupons) {
+  const container = document.getElementById('coupons-table-container');
+  if (!container) return;
+
+  if (coupons.length === 0) {
+    container.innerHTML = '<div class="empty-state">Nenhum cupom cadastrado. Clique em "Novo Cupom" para criar o primeiro.</div>';
+    return;
+  }
+
+  const typeLabel = { percent: 'Porcentagem (%)', fixed: 'Valor fixo (R$)' };
+  const statusLabel = { active: 'Ativo', inactive: 'Inativo', expired: 'Expirado' };
+  const statusClass = { active: 'pill-concluido', inactive: 'pill-cancelado', expired: 'pill-pendente' };
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tipo</th>
+          <th>Valor</th>
+          <th>Máx. Desconto</th>
+          <th>Mín. Total</th>
+          <th>Válido de</th>
+          <th>Válido até</th>
+          <th>Limite Usos</th>
+          <th>Usos</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${coupons.map((c) => {
+          const valueDisplay = c.type === 'percent' ? `${c.value}%` : formatMoney(c.value);
+          const maxDiscountDisplay = c.maxDiscount ? formatMoney(c.maxDiscount) : '—';
+          const minTotalDisplay = c.minTotal ? formatMoney(c.minTotal) : '—';
+          const startsAt = c.startsAt ? new Date(c.startsAt).toLocaleDateString('pt-BR') : '—';
+          const endsAt = c.endsAt ? new Date(c.endsAt).toLocaleDateString('pt-BR') : '—';
+          const usageLimit = c.usageLimit ? c.usageLimit : 'Ilimitado';
+          const usedCount = c.usedCount || 0;
+          return `
+            <tr data-id="${c.id}">
+              <td class="cell-strong">${escapeHtml(c.code)}</td>
+              <td>${typeLabel[c.type]}</td>
+              <td>${valueDisplay}</td>
+              <td>${maxDiscountDisplay}</td>
+              <td>${minTotalDisplay}</td>
+              <td>${startsAt}</td>
+              <td>${endsAt}</td>
+              <td>${usageLimit}</td>
+              <td>${usedCount}</td>
+              <td><span class="pill ${statusClass[c.status] || 'pill-pendente'}">${statusLabel[c.status]}</span></td>
+              <td>
+                <div class="table-actions">
+                  <button type="button" class="btn-icon edit-coupon-btn" title="Editar">${ICONS.pencil}</button>
+                  <button type="button" class="btn-icon delete-coupon-btn" title="Excluir">${ICONS.trash}</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+
+  container.querySelectorAll('.edit-coupon-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      const couponId = row.dataset.id;
+      const coupon = coupons.find((c) => c.id === couponId);
+      if (coupon) openEditCouponModal(coupon);
+    });
+  });
+
+  container.querySelectorAll('.delete-coupon-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const row = btn.closest('tr');
+      const couponId = row.dataset.id;
+      const coupon = coupons.find((c) => c.id === couponId);
+      if (!coupon) return;
+      const confirmed = window.confirm(`Excluir o cupom "${coupon.code}"?`);
+      if (!confirmed) return;
+      try {
+        await api('DELETE', `/api/coupons/${couponId}`);
+        toast('Cupom excluido.');
+        loadCoupons();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
+function openNewCouponModal() {
+  const servicesPromise = api('GET', '/api/services').catch(() => []);
+  servicesPromise.then((services) => {
+    const bodyHtml = buildCouponModalHtml(services);
+    showModal('Novo Cupom', bodyHtml, (overlay) => {
+      setupCouponModal(overlay, null);
+    });
+  });
+}
+
+function openEditCouponModal(coupon) {
+  const servicesPromise = api('GET', '/api/services').catch(() => []);
+  servicesPromise.then((services) => {
+    const bodyHtml = buildCouponModalHtml(services, coupon);
+    showModal('Editar Cupom', bodyHtml, (overlay) => {
+      setupCouponModal(overlay, coupon);
+    });
+  });
+}
+
+function buildCouponModalHtml(services, coupon) {
+  const isEdit = !!coupon;
+  const typeOptions = ['percent', 'fixed'];
+  const statusOptions = ['active', 'inactive'];
+  const serviceOptions = services.map((s) => `<option value="${s.id}">${escapeHtml(s.name)} (${formatMoney(s.price)})</option>`).join('');
+
+  return `
+    <form id="coupon-form">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Código *</label>
+          <input type="text" name="code" value="${escapeHtml(coupon?.code || '')}" ${isEdit ? 'readonly' : ''} placeholder="EX: VERAO20" style="text-transform:uppercase;" />
+          <small>Use apenas letras maiúsculas, números, _ e -</small>
+        </div>
+        <div class="form-field">
+          <label>Tipo *</label>
+          <select name="type">
+            ${typeOptions.map((t) => `<option value="${t}" ${coupon?.type === t ? 'selected' : ''}>${t === 'percent' ? 'Porcentagem (%)' : 'Valor fixo (R$)'}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Valor *</label>
+          <input type="number" name="value" step="0.01" min="0.01" value="${coupon?.value || ''}" required placeholder="${coupon?.type === 'percent' ? 'Ex: 10 para 10%' : 'Ex: 25.00 para R$ 25,00'}" />
+        </div>
+        <div class="form-field">
+          <label>Máx. Desconto (opcional)</label>
+          <input type="number" name="maxDiscount" step="0.01" min="0" value="${coupon?.maxDiscount || ''}" placeholder="Apenas para % - ex: 50.00" />
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Mín. Total (opcional)</label>
+          <input type="number" name="minTotal" step="0.01" min="0" value="${coupon?.minTotal || ''}" placeholder="Ex: 100.00" />
+        </div>
+        <div class="form-field">
+          <label>Status</label>
+          <select name="status">
+            ${statusOptions.map((s) => `<option value="${s}" ${coupon?.status === s ? 'selected' : ''}>${s === 'active' ? 'Ativo' : 'Inativo'}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Início (opcional)</label>
+          <input type="datetime-local" name="startsAt" value="${coupon?.startsAt ? coupon.startsAt.substring(0, 16) : ''}" />
+        </div>
+        <div class="form-field">
+          <label>Fim (opcional)</label>
+          <input type="datetime-local" name="endsAt" value="${coupon?.endsAt ? coupon.endsAt.substring(0, 16) : ''}" />
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Limite de Usos (opcional)</label>
+          <input type="number" name="usageLimit" min="1" value="${coupon?.usageLimit || ''}" placeholder="Deixe vazio para ilimitado" />
+        </div>
+      </div>
+      <div class="form-field">
+        <label>Serviços Aplicáveis (opcional)</label>
+        <select name="applicableServices" multiple style="min-height:100px;">
+          ${serviceOptions}
+        </select>
+        <small>Selecione quais serviços o cupom se aplica. Vazio = todos os serviços.</small>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-coupon">Cancelar</button>
+        <button type="submit" class="btn btn-primary">${isEdit ? 'Salvar Alteracoes' : 'Criar Cupom'}</button>
+      </div>
+    </form>
+  `;
+}
+
+function setupCouponModal(overlay, coupon) {
+  const isEdit = !!coupon;
+  overlay.querySelector('#cancel-coupon').addEventListener('click', closeModal);
+
+  const typeSelect = overlay.querySelector('select[name="type"]');
+  const valueInput = overlay.querySelector('input[name="value"]');
+  const maxDiscountInput = overlay.querySelector('input[name="maxDiscount"]');
+
+  if (typeSelect && valueInput) {
+    typeSelect.addEventListener('change', () => {
+      if (typeSelect.value === 'percent') {
+        valueInput.placeholder = 'Ex: 10 para 10%';
+        maxDiscountInput.style.display = '';
+      } else {
+        valueInput.placeholder = 'Ex: 25.00 para R$ 25,00';
+        maxDiscountInput.style.display = 'none';
+      }
+    });
+    // Trigger initial state
+    typeSelect.dispatchEvent(new Event('change'));
+  }
+
+  if (coupon && coupon.applicableServices) {
+    const multiSelect = overlay.querySelector('select[name="applicableServices"]');
+    if (multiSelect) {
+      Array.from(multiSelect.options).forEach((opt) => {
+        if (coupon.applicableServices.includes(opt.value)) opt.selected = true;
+      });
+    }
+  }
+
+  overlay.querySelector('#coupon-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const payload = {
+      code: fd.get('code').toUpperCase(),
+      type: fd.get('type'),
+      value: Number(fd.get('value')),
+      status: fd.get('status')
+    };
+    if (fd.get('maxDiscount')) payload.maxDiscount = Number(fd.get('maxDiscount'));
+    if (fd.get('minTotal')) payload.minTotal = Number(fd.get('minTotal'));
+    if (fd.get('startsAt')) payload.startsAt = new Date(fd.get('startsAt')).toISOString();
+    if (fd.get('endsAt')) payload.endsAt = new Date(fd.get('endsAt')).toISOString();
+    if (fd.get('usageLimit')) payload.usageLimit = Number(fd.get('usageLimit'));
+    const applicableServices = Array.from(overlay.querySelector('select[name="applicableServices"]').selectedOptions).map((o) => o.value);
+    if (applicableServices.length > 0) payload.applicableServices = applicableServices;
+
+    try {
+      if (isEdit) {
+        await api('PUT', `/api/coupons/${coupon.id}`, payload);
+        toast('Cupom atualizado.');
+      } else {
+        await api('POST', '/api/coupons', payload);
+        toast('Cupom criado.');
+      }
+      closeModal();
+      loadCoupons();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  });
 }
 
 // ---------- Aparência (seletor de cor de destaque) ----------
@@ -2326,27 +2918,45 @@ async function loadEstablishmentUsers() {
     }
     container.innerHTML = `
       <table class="mini-table">
-        <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Acesso</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>2FA</th><th>Acesso</th><th></th></tr></thead>
         <tbody>
           ${users.map((user) => {
             const isGlobal = user.role === 'admin' && (user.allowedEstablishmentIds === null || user.allowedEstablishmentIds === undefined);
             const accessBadge = isGlobal
               ? '<span class="access-badge access-global" title="Acesso a todos os estabelecimentos">Global</span>'
               : '<span class="access-badge access-local" title="Acesso somente a este estabelecimento">Este estab.</span>';
-            const canDelete = user.id !== currentUser.id && !isGlobal;
+            const twoFactorBadge = user.twoFactorEnabled
+              ? '<span class="pill pill-concluido" style="font-size:11px;">Ativo</span>'
+              : '<span class="pill pill-pendente" style="font-size:11px;">Inativo</span>';
+            const canDelete = currentUser && currentUser.role === 'admin' && user.id !== currentUser.id && !isGlobal;
+            const isSelf = user.id === currentUser.id;
             return `
             <tr>
-              <td>${escapeHtml(user.name)}${user.id === currentUser.id ? ' <span class="tag">Voce</span>' : ''}</td>
+              <td>${escapeHtml(user.name)}${isSelf ? ' <span class="tag">Voce</span>' : ''}</td>
               <td>${escapeHtml(user.email)}</td>
               <td><span class="role-badge ${user.role === 'admin' ? '' : 'func'}">${escapeHtml(user.role || 'operator')}</span></td>
+              <td>${twoFactorBadge}</td>
               <td>${accessBadge}</td>
-              <td>${canDelete ? `<button class="btn-icon danger delete-user-btn" data-id="${user.id}" title="Remover deste estabelecimento">${ICONS.trash}</button>` : ''}</td>
+              <td>
+                ${isSelf ? `
+                  <button class="btn-icon" id="my-2fa-btn" title="Configurar meu 2FA">${ICONS.shield}</button>
+                ` : canDelete ? `
+                  <button class="btn-icon danger delete-user-btn" data-id="${user.id}" title="Remover deste estabelecimento">${ICONS.trash}</button>
+                ` : ''}
+              </td>
             </tr>
           `;
           }).join('')}
         </tbody>
       </table>
     `;
+    
+    // Botão do próprio usuário para configurar 2FA
+    const my2faBtn = container.querySelector('#my-2fa-btn');
+    if (my2faBtn) {
+      my2faBtn.addEventListener('click', () => openMyTwoFactorModal());
+    }
+    
     container.querySelectorAll('.delete-user-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Remover este usuario do estabelecimento?')) return;
@@ -2362,7 +2972,196 @@ async function loadEstablishmentUsers() {
   }
 }
 
+function openMyTwoFactorModal() {
+  api('GET', '/api/2fa/status').then(status => {
+    const isEnabled = status.enabled;
+    const backupCount = status.backupCodesCount || 0;
+    
+    let bodyHtml;
+    if (!isEnabled) {
+      bodyHtml = `
+        <div class="twofactor-setup">
+          <p style="color:var(--text-muted);margin-bottom:20px;">Adicione uma camada extra de segurança à sua conta usando um autenticador (Google Authenticator, Authy, Microsoft Authenticator, etc.).</p>
+          <button type="button" class="btn btn-primary" id="enable-2fa-btn">${ICONS.shield} Ativar 2FA</button>
+        </div>
+      `;
+    } else {
+      bodyHtml = `
+        <div class="twofactor-enabled">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:16px;background:rgba(34,197,94,0.1);border-radius:10px;border:1px solid #bbf7d0;">
+            <div style="font-size:28px;">${ICONS.shield}</div>
+            <div>
+              <strong style="color:#15803d;">2FA Ativo</strong>
+              <div style="color:var(--text-muted);font-size:13px;margin-top:2px;">Ativado em ${status.enabledAt ? new Date(status.enabledAt).toLocaleDateString('pt-BR') : 'data desconhecida'}</div>
+            </div>
+          </div>
+          <div style="margin-bottom:16px;padding:12px;background:var(--bg-muted);border-radius:8px;">
+            <strong>Códigos de backup restantes: ${backupCount}</strong>
+            <div style="color:var(--text-muted);font-size:12px;margin-top:4px;">Use se perder acesso ao autenticador. Cada código funciona uma única vez.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary" id="regenerate-backup-btn">${ICONS.rotateCw} Gerar novos códigos</button>
+            <button type="button" class="btn btn-warning" id="disable-2fa-btn">${ICONS.lock} Desativar 2FA</button>
+          </div>
+        </div>
+      `;
+    }
+    
+    showModal('Autenticação de Dois Fatores', bodyHtml, (overlay) => {
+      if (!isEnabled) {
+        overlay.querySelector('#enable-2fa-btn').addEventListener('click', () => {
+          closeModal();
+          startTwoFactorSetup();
+        });
+      } else {
+        overlay.querySelector('#regenerate-backup-btn').addEventListener('click', () => {
+          closeModal();
+          regenerateBackupCodes();
+        });
+        overlay.querySelector('#disable-2fa-btn').addEventListener('click', () => {
+          closeModal();
+          disableMyTwoFactor();
+        });
+      }
+    });
+  }).catch(err => toast(err.message, true));
+}
+
+function startTwoFactorSetup() {
+  api('POST', '/api/2fa/setup').then(data => {
+    const bodyHtml = `
+      <div class="twofactor-setup">
+        <h3 style="margin:0 0 8px 0;">1. Escaneie o QR Code</h3>
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Use Google Authenticator, Authy, Microsoft Authenticator ou similar.</p>
+        <div style="text-align:center;margin:20px 0;">
+          <img src="${data.qrCode}" alt="QR Code 2FA" style="max-width:200px;border-radius:8px;box-shadow:var(--shadow);" />
+        </div>
+        <div style="margin:16px 0;padding:12px;background:var(--bg-muted);border-radius:8px;font-family:monospace;font-size:13px;word-break:break-all;">
+          <strong>Chave manual:</strong> ${data.secret}
+        </div>
+        <h3 style="margin:20px 0 8px 0;">2. Códigos de Backup (guarde em local seguro!)</h3>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px;">
+          ${data.backupCodes.map(code => `<code style="background:var(--bg-muted);padding:8px;border-radius:6px;font-size:13px;">${code}</code>`).join('')}
+        </div>
+        <p style="color:#ef4444;font-size:12px;margin-bottom:16px;">⚠️ Estes códigos aparecem apenas uma vez. Salve-os agora!</p>
+        <h3 style="margin:8px 0;">3. Confirme com o código do autenticador</h3>
+        <div class="form-field">
+          <label>Código de 6 dígitos</label>
+          <input type="text" name="totpToken" id="totp-confirm-input" required autocomplete="one-time-code" placeholder="123456" style="text-align:center;letter-spacing:4px;font-size:18px;" maxlength="6" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="cancel-2fa-setup">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="confirm-2fa-setup">Ativar 2FA</button>
+        </div>
+      </div>
+    `;
+    showModal('Configurar 2FA', bodyHtml, (overlay) => {
+      overlay.querySelector('#cancel-2fa-setup').addEventListener('click', closeModal);
+      overlay.querySelector('#confirm-2fa-setup').addEventListener('click', async () => {
+        const token = overlay.querySelector('#totp-confirm-input').value.trim();
+        if (!token || token.length !== 6) {
+          toast('Digite o código de 6 dígitos.', true);
+          return;
+        }
+        try {
+          await api('POST', '/api/2fa/enable', { token });
+          toast('Autenticação de dois fatores ativada com sucesso!');
+          closeModal();
+          loadEstablishmentUsers();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      });
+    });
+  }).catch(err => toast(err.message, true));
+}
+
+function regenerateBackupCodes() {
+  const bodyHtml = `
+    <form id="regen-backup-form">
+      <p style="color:var(--text-muted);margin-bottom:16px;">Para gerar novos códigos de backup, confirme sua senha e o código do autenticador.</p>
+      <div class="form-field"><label>Senha atual</label><input type="password" name="password" required /></div>
+      <div class="form-field"><label>Código do autenticador</label><input type="text" name="token" required autocomplete="one-time-code" placeholder="123456" style="text-align:center;letter-spacing:4px;font-size:18px;" maxlength="6" /></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-regen">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Gerar novos códigos</button>
+      </div>
+    </form>
+  `;
+  showModal('Gerar novos códigos de backup', bodyHtml, (overlay) => {
+    overlay.querySelector('#cancel-regen').addEventListener('click', closeModal);
+    overlay.querySelector('#regen-backup-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        const res = await api('POST', '/api/2fa/regenerate-backup-codes', {
+          password: fd.get('password'),
+          token: fd.get('token')
+        });
+        closeModal();
+        const codesHtml = `
+          <div class="twofactor-setup">
+            <h3 style="margin:0 0 8px 0;">Novos códigos de backup gerados!</h3>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Salve em local seguro. Os códigos anteriores foram invalidados.</p>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">
+              ${res.backupCodes.map(code => `<code style="background:var(--bg-muted);padding:8px;border-radius:6px;font-size:13px;">${code}</code>`).join('')}
+            </div>
+            <div class="modal-actions" style="justify-content:center;margin-top:20px;">
+              <button type="button" class="btn btn-primary" id="close-backup-modal">Entendi, salvei</button>
+            </div>
+          </div>
+        `;
+        showModal('Códigos de Backup', codesHtml, (o2) => {
+          o2.querySelector('#close-backup-modal').addEventListener('click', closeModal);
+        });
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
+function disableMyTwoFactor() {
+  const bodyHtml = `
+    <form id="disable-2fa-form">
+      <div style="padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:16px;color:#b91c1c;">
+        <strong>⚠️ Atenção:</strong> Desativar 2FA remove a proteção extra da sua conta. Apenas a senha será necessária para login.
+      </div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Confirme sua senha e o código do autenticador para desativar.</p>
+      <div class="form-field"><label>Senha atual</label><input type="password" name="password" required /></div>
+      <div class="form-field"><label>Código do autenticador</label><input type="text" name="token" required autocomplete="one-time-code" placeholder="123456" style="text-align:center;letter-spacing:4px;font-size:18px;" maxlength="6" /></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-disable">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Desativar 2FA</button>
+      </div>
+    </form>
+  `;
+  showModal('Desativar 2FA', bodyHtml, (overlay) => {
+    overlay.querySelector('#cancel-disable').addEventListener('click', closeModal);
+    overlay.querySelector('#disable-2fa-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        await api('POST', '/api/2fa/disable', {
+          password: fd.get('password'),
+          token: fd.get('token')
+        });
+        toast('Autenticação de dois fatores desativada.');
+        closeModal();
+        loadEstablishmentUsers();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+  });
+}
+
 function openNewUserModal() {
+  // So o admin da plataforma pode conceder perfil Administrador.
+  const roleOptions = isGlobalAdmin(currentUser)
+    ? `<option value="operator" selected>Operador</option>
+       <option value="admin">Administrador</option>`
+    : `<option value="operator" selected>Operador</option>`;
   const bodyHtml = `
     <form id="new-user-form">
       <div class="form-field"><label>Nome *</label><input type="text" name="name" required /></div>
@@ -2370,8 +3169,7 @@ function openNewUserModal() {
       <div class="form-field"><label>Senha *</label><input type="password" name="password" required /></div>
       <div class="form-field"><label>Perfil</label>
         <select name="role">
-          <option value="operator" selected>Operador</option>
-          <option value="admin">Administrador</option>
+          ${roleOptions}
         </select>
       </div>
       <div class="modal-actions">
@@ -2386,7 +3184,7 @@ function openNewUserModal() {
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
-        await api('POST', '/api/users', {
+        await api('POST', `/api/users/by-establishment/${currentEstablishment.id}`, {
           name: fd.get('name'),
           email: fd.get('email'),
           password: fd.get('password'),
@@ -2726,6 +3524,7 @@ async function renderSenhasPage() {
       </form>
     </div>
     ${currentUser && currentUser.role === 'admin' ? `
+    <div id="pending-users-section"></div>
     <div class="card settings-card">
       <div class="page-header" style="align-items:flex-start;gap:12px;flex-wrap:wrap;">
         <div>
@@ -2765,6 +3564,55 @@ async function renderSenhasPage() {
   }
 }
 
+// Renderiza o card de cadastros pendentes de aprovacao (usuarios que se
+// cadastraram via Google e aguardam o admin associar a uma loja).
+function renderPendingUsers(pendingUsers) {
+  const section = document.getElementById('pending-users-section');
+  if (!section) return;
+  if (!pendingUsers || pendingUsers.length === 0) {
+    section.innerHTML = '';
+    return;
+  }
+  section.innerHTML = `
+    <div class="card settings-card pending-users-card">
+      <div class="page-header" style="align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h2>${ICONS.clock} Cadastros Pendentes <span class="pending-count-badge">${pendingUsers.length}</span></h2>
+          <p>Usuarios que se cadastraram (ex: via Google) e aguardam associacao a uma loja</p>
+        </div>
+      </div>
+      <div class="pending-users-list">
+        ${pendingUsers.map((user) => {
+          const initials = (user.name || user.email || '?').trim().charAt(0).toUpperCase();
+          return `
+          <div class="pending-user-item">
+            <div class="user-cell">
+              <div class="user-avatar">${escapeHtml(initials)}</div>
+              <div class="user-meta">
+                <div class="user-name">${escapeHtml(user.name)}</div>
+                <div class="user-email">${escapeHtml(user.email)}</div>
+              </div>
+            </div>
+            <div class="pending-user-actions">
+              <span class="pill pill-pendente">Aguardando</span>
+              <button class="btn btn-primary btn-sm approve-user-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" data-role="${escapeHtml(user.role)}" data-allowed='${JSON.stringify(user.allowedEstablishmentIds)}'>
+                ${ICONS.globe} Associar a uma loja
+              </button>
+            </div>
+          </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  section.querySelectorAll('.approve-user-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const allowed = JSON.parse(btn.dataset.allowed);
+      openAssociateModal(btn.dataset.id, btn.dataset.name, allowed, btn.dataset.role);
+    });
+  });
+}
+
 async function loadAdminUsers() {
   const container = document.getElementById('admin-users-container');
   if (!container) return;
@@ -2777,6 +3625,12 @@ async function loadAdminUsers() {
 
     const isGlobal = (u) => u.role === 'admin' && (u.allowedEstablishmentIds === null || u.allowedEstablishmentIds === undefined);
 
+    // Cadastros pendentes: operadores sem nenhum estabelecimento associado
+    // (criados via login Google, aguardando o admin associar a uma loja).
+    const pendingUsers = users.filter((u) => !isGlobal(u) &&
+      (!Array.isArray(u.allowedEstablishmentIds) || u.allowedEstablishmentIds.length === 0));
+    renderPendingUsers(pendingUsers);
+
     container.innerHTML = `
       <div class="users-table-wrap">
         <table class="mini-table users-table">
@@ -2785,6 +3639,7 @@ async function loadAdminUsers() {
               <th>Usuario</th>
               <th>Perfil</th>
               <th>Acesso</th>
+              <th>2FA</th>
               <th>Ultima troca de senha</th>
               <th class="col-actions">Acoes</th>
             </tr>
@@ -2819,12 +3674,20 @@ async function loadAdminUsers() {
                 </td>
                 <td><span class="role-badge ${user.role === 'admin' ? '' : 'func'}">${escapeHtml(user.role)}</span></td>
                 <td>${accessCell}</td>
+                <td>${user.twoFactorEnabled
+                  ? '<span class="pill pill-concluido" style="font-size:11px;">Ativo</span>'
+                  : '<span class="pill pill-pendente" style="font-size:11px;">Inativo</span>'}</td>
                 <td class="cell-muted">${user.passwordChangedAt ? formatDateTime(user.passwordChangedAt) : '<span class="pill pill-pendente">Nunca</span>'}</td>
                 <td class="col-actions">
                   <div class="row-actions">
                     <button class="action-btn action-btn-blue reset-pwd-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Resetar senha">
                       ${ICONS.lock}
                     </button>
+                    ${user.twoFactorEnabled && user.id !== currentUser.id ? `
+                    <button class="action-btn action-btn-orange reset-2fa-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" title="Resetar 2FA (desativar autenticacao de dois fatores)">
+                      ${ICONS.shield}
+                    </button>
+                    ` : ''}
                     <button class="action-btn action-btn-violet associate-btn" data-id="${user.id}" data-name="${escapeHtml(user.name)}" data-role="${escapeHtml(user.role)}" data-allowed='${JSON.stringify(user.allowedEstablishmentIds)}' title="Associar estabelecimentos">
                       ${ICONS.globe}
                     </button>
@@ -2846,6 +3709,25 @@ async function loadAdminUsers() {
     container.querySelectorAll('.reset-pwd-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         openResetPasswordModal(btn.dataset.id, btn.dataset.name);
+      });
+    });
+
+    container.querySelectorAll('.reset-2fa-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = window.confirm(
+          `Resetar o 2FA de "${btn.dataset.name}"?\n\n` +
+          `A autenticacao de dois fatores sera DESATIVADA e os codigos de backup apagados. ` +
+          `O usuario podera entrar so com email/senha e reativar o 2FA depois.\n\n` +
+          `Continuar?`
+        );
+        if (!ok) return;
+        try {
+          await api('POST', '/api/2fa/disable', { userId: btn.dataset.id });
+          toast('2FA resetado com sucesso.');
+          loadAdminUsers();
+        } catch (err) {
+          toast(err.message, true);
+        }
       });
     });
 

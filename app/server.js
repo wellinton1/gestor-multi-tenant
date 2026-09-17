@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
+const passport = require('passport');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const crypto = require('crypto');
@@ -18,6 +19,8 @@ process.on('uncaughtException', (err) => {
 });
 
 const { runSeed } = require('./src/data/seed');
+const store = require('./src/data/store');
+const { ensurePostgres } = require('./src/utils/pg-embedded');
 
 const authRoutes = require('./src/routes/auth');
 const establishmentsRoutes = require('./src/routes/establishments');
@@ -30,16 +33,24 @@ const dashboardRoutes = require('./src/routes/dashboard');
 const portalRoutes = require('./src/routes/portal');
 const usersRoutes = require('./src/routes/users');
 const passwordRoutes = require('./src/routes/password');
+const passwordRecoveryRoutes = require('./src/routes/passwordRecovery');
+const twoFactorRoutes = require('./src/routes/twoFactor');
 const securityRoutes = require('./src/routes/security');
 const setupRoutes = require('./src/routes/setup');
 const paymentsRoutes = require('./src/routes/payments');
 const backupsRoutes = require('./src/routes/backups');
+const couponsRoutes = require('./src/routes/coupons');
 const { startBackupScheduler } = require('./src/utils/backup');
 
 const app = express();
 const DEFAULT_PORT = Number(process.env.PORT) || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
+// OAuth Google precisa de SameSite=Lax: com 'strict' o browser descarta o
+// cookie de sessao no redirect de volta do accounts.google.com e o login
+// nunca completa. Respeita COOKIE_SAME_SITE, default 'lax'.
+const cookieSameSiteRaw = String(process.env.COOKIE_SAME_SITE || 'lax').toLowerCase();
+const cookieSameSite = ['strict', 'lax', 'none'].includes(cookieSameSiteRaw) ? cookieSameSiteRaw : 'lax';
 
 const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS) || 12;
 
@@ -169,13 +180,19 @@ app.use(
     rolling: true,
     cookie: {
       httpOnly: true,
-      sameSite: 'strict',
+      sameSite: cookieSameSite,
       maxAge: 1000 * 60 * 60 * 24 * 7,
-      secure: cookieSecure,
+      secure: cookieSameSite === 'none' ? true : cookieSecure,
       path: '/'
     }
   })
 );
+
+// Passport eh obrigatorio para o login Google funcionar:
+// sem initialize()/session(), passport.authenticate() falha com
+// "passport.initialize() middleware not in use" e req.user nunca existe.
+app.use(passport.initialize());
+app.use(passport.session());
 
 // ===== CSRF Protection (Double Submit Cookie Pattern) =====
 // Gera token CSRF e armazena em cookie acessivel via JS
@@ -227,16 +244,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Bootstrap admin user + optional demo data on first run.
-runSeed().catch((err) => {
-  console.error('Erro durante execucao do seed:', err.message);
-});
-
-// Backup automatico do site inteiro (.zip em app/data/backups, default a cada 6h)
-startBackupScheduler();
+// Bootstrap admin user + optional demo data on first run (apos o banco
+// estar pronto — ver boot() no final do arquivo).
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', passwordRecoveryRoutes); // forgot/reset password (sem rate limit extra)
+
+app.use('/api/2fa', require('./src/middleware/auth').requireLogin, twoFactorRoutes);
 app.use('/api/setup', authLimiter, setupRoutes);
 app.use('/api/password', require('./src/middleware/auth').requireLogin, passwordLimiter, passwordRoutes);
 app.use('/api/establishments', establishmentsRoutes);
@@ -251,6 +266,7 @@ app.use('/api/portal', portalLimiter, portalRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/backups', backupsRoutes);
+app.use('/api/coupons', couponsRoutes);
 
 // Static frontend com cache-control
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -313,7 +329,26 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
+// Boot: 1) sobe/verifica PostgreSQL; 2) carrega cache do store e importa
+// db.json residual (migracao ou pos-restore); 3) seed; 4) backups; 5) HTTP.
+async function boot() {
+  try {
+    await ensurePostgres();
+    await store.init();
+  } catch (err) {
+    console.error('ERRO FATAL ao iniciar o banco de dados:', err.message);
+    process.exit(1);
+  }
+  try {
+    await runSeed();
+  } catch (err) {
+    console.error('Erro durante execucao do seed:', err.message);
+  }
+  startBackupScheduler();
+  await startServer();
+}
+
+boot().catch((err) => {
   console.error('Falha ao iniciar o servidor:', err);
   process.exit(1);
 });

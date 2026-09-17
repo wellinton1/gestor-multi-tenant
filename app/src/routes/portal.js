@@ -22,7 +22,8 @@ const bookingSchema = z.object({
     qty: z.number().int().positive('Quantidade deve ser positiva').max(10, 'Quantidade maxima 10')
   })).min(1, 'Selecione pelo menos um servico'),
   dateTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Data/hora invalida (formato: YYYY-MM-DDTHH:MM)'),
-  notes: z.string().max(500, 'Observacoes muito longas').optional()
+  notes: z.string().max(500, 'Observacoes muito longas').optional(),
+  couponCode: z.string().max(30).optional()
 });
 
 // Validation middleware
@@ -54,6 +55,7 @@ router.get('/:establishmentId', async (req, res) => {
       });
     }
     const services = store.query('services', (s) => s.establishmentId === est.id);
+    const hasPayment = !!(est.pixApiKey || est.abacatePayApiKey);
     res.json({
       id: est.id,
       name: est.name,
@@ -68,7 +70,7 @@ router.get('/:establishmentId', async (req, res) => {
       address: est.address,
       logoDataUrl: est.logoDataUrl,
       businessHours: est.businessHours || getDefaultBusinessHours(),
-      hasPayment: !!est.abacatePayApiKey,
+      hasPayment,
       services
     });
   } catch (err) {
@@ -205,7 +207,7 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       return res.status(423).json({ error: 'Esta loja esta pausada e nao aceita agendamentos.', paused: true });
     }
 
-    const { clientName, clientPhone, clientEmail, selectedServices, dateTime, notes } = req.validated;
+    const { clientName, clientPhone, clientEmail, selectedServices, dateTime, notes, couponCode } = req.validated;
 
     const services = normalizeSelectedServices(selectedServices);
     if (services.length === 0) {
@@ -237,7 +239,47 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       });
     }
 
-    const total = services.reduce((sum, item) => sum + item.price * item.qty, 0);
+    const subtotal = services.reduce((sum, item) => sum + item.price * item.qty, 0);
+    let total = subtotal;
+    let appliedCoupon = null;
+    let discount = 0;
+
+    if (couponCode) {
+      const coupon = store.query('coupons', (c) => c.establishmentId === est.id && c.code === String(couponCode).toUpperCase())[0];
+      if (coupon) {
+        const now = new Date();
+        if (coupon.status === 'active' &&
+            (!coupon.startsAt || new Date(coupon.startsAt) <= now) &&
+            (!coupon.endsAt || new Date(coupon.endsAt) >= now) &&
+            (coupon.usageLimit === null || coupon.usageLimit === undefined || coupon.usedCount < coupon.usageLimit) &&
+            (!coupon.minTotal || subtotal >= coupon.minTotal) &&
+            (!coupon.applicableServices || coupon.applicableServices.length === 0 || services.some(s => coupon.applicableServices.includes(s.id)))) {
+          
+          if (coupon.type === 'percent') {
+            discount = subtotal * (coupon.value / 100);
+            if (coupon.maxDiscount && discount > coupon.maxDiscount) {
+              discount = coupon.maxDiscount;
+            }
+          } else if (coupon.type === 'fixed') {
+            discount = Math.min(coupon.value, subtotal);
+          }
+          discount = Math.round(discount * 100) / 100;
+          total = Math.max(0, subtotal - discount);
+          
+          coupon.usedCount = (coupon.usedCount || 0) + 1;
+          store.update('coupons', coupon.id, { usedCount: coupon.usedCount });
+          
+          appliedCoupon = {
+            id: coupon.id,
+            code: coupon.code,
+            type: coupon.type,
+            value: coupon.value,
+            discount
+          };
+        }
+      }
+    }
+
     const serviceName = buildServiceSummary(services);
     const appointment = store.insert('appointments', {
       id: uuid(),
@@ -250,10 +292,15 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       total,
       status: 'Pendente',
       source: 'portal',
+      couponId: appliedCoupon ? appliedCoupon.id : null,
+      couponCode: appliedCoupon ? appliedCoupon.code : null,
+      discount,
+      subtotal,
       createdAt: new Date().toISOString()
     });
 
-    res.status(201).json({ ok: true, appointment, total, hasPayment: !!est.abacatePayApiKey });
+    const hasPayment = !!(est.pixApiKey || est.abacatePayApiKey);
+    res.status(201).json({ ok: true, appointment, total, subtotal, discount, appliedCoupon, hasPayment });
   } catch (err) {
     console.error('ERROR in POST /api/portal/:id/book:', err.message);
     res.status(500).json({
@@ -263,104 +310,68 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
   }
 });
 
-const ABACATEPAY_BASE = 'https://api.abacatepay.com/v2';
+const {
+  createPixPayment,
+  checkPixPayment,
+  createCustomer,
+  createCheckout,
+  createProduct
+} = require('../utils/payment-providers');
 
-async function abacateRequest(method, path, apiKey, body) {
-  const opts = {
-    method,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    }
+function getPaymentConfig(est) {
+  return {
+    provider: est.pixProvider || 'abacatepay',
+    apiKey: est.pixApiKey || est.abacatePayApiKey || '',
+    baseUrl: est.pixBaseUrl || '',
+    extraHeaders: est.pixExtraHeaders ? JSON.parse(est.pixExtraHeaders) : {}
   };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${ABACATEPAY_BASE}${path}`, opts);
-  let data;
-  try { data = await res.json(); } catch (e) { data = null; }
-  if (!res.ok) {
-    const errMsg = (data && (data.error || (data.errorDetail) || (data.message))) || `AbacatePay retornou ${res.status}`;
-    const err = new Error(errMsg);
-    err.responseData = data;
-    throw err;
-  }
-  return data;
 }
 
 router.post('/:establishmentId/pay-pix', async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
-    const apiKey = est.abacatePayApiKey;
-    if (!apiKey) return res.status(400).json({ error: 'Pagamento nao disponivel para este estabelecimento.' });
+    const config = getPaymentConfig(est);
+    if (!config.apiKey) return res.status(400).json({ error: 'Pagamento nao configurado para este estabelecimento.' });
 
-    const { amount, description, customerEmail, customerName, customerPhone } = req.body || {};
+    const { amount, description, customerEmail, customerName, customerPhone, customerTaxId } = req.body || {};
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valor e obrigatorio.' });
     }
 
-    const payload = {
-      method: 'PIX',
-      data: {
-        amount: Math.round(amount * 100)
-      }
-    };
-    if (description) payload.data.description = String(description);
+    const customer = customerEmail ? {
+      email: customerEmail,
+      name: customerName,
+      cellphone: customerPhone,
+      taxId: customerTaxId
+    } : undefined;
 
-    console.log('DEBUG AbacatePay payload:', JSON.stringify(payload, null, 2));
-    console.log('DEBUG AbacatePay API key:', apiKey.substring(0, 10) + '...');
+    const result = await createPixPayment(config.provider, config.apiKey, {
+      amount,
+      description: description || 'Agendamento',
+      customer
+    }, config);
 
-    const opts = {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    };
-
-    console.log('DEBUG Request headers:', opts.headers);
-    console.log('DEBUG Request body:', opts.body);
-
-    const apiRes = await fetch(`${ABACATEPAY_BASE}/transparents/create`, opts);
-    const responseText = await apiRes.text();
-    console.log('DEBUG Response status:', apiRes.status);
-    console.log('DEBUG Response body:', responseText);
-
-    let data;
-    try { data = JSON.parse(responseText); } catch (e) { data = null; }
-
-    if (!apiRes.ok) {
-      const errMsg = (data && (data.error || data.errorDetail || data.message)) || `AbacatePay retornou ${apiRes.status}`;
-      return res.status(500).json({
-        error: errMsg,
-        debug: {
-          status: apiRes.status,
-          response: data || responseText,
-          payload: payload
-        }
-      });
-    }
-
-    res.json(data);
+    res.json(result);
   } catch (err) {
     console.error('ERROR POST /api/portal/:id/pay-pix:', err.message);
     res.status(500).json({
       error: err.message || 'Erro ao gerar PIX',
-      debug: { message: err.message }
+      ...(isProduction ? {} : { details: err.message, response: err.responseData })
     });
   }
 });
 
-// Pagamento com cartao de credito (cliente final): cria checkout hospedado no AbacatePay
+// Pagamento com cartao de credito (cliente final): cria checkout hospedado
 // e devolve a URL para o cliente concluir o pagamento. Aceita valor parcial (sinal).
 router.post('/:establishmentId/pay-card', async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
-    const apiKey = est.abacatePayApiKey;
-    if (!apiKey) return res.status(400).json({ error: 'Pagamento nao disponivel para este estabelecimento.' });
+    const config = getPaymentConfig(est);
+    if (!config.apiKey) return res.status(400).json({ error: 'Pagamento nao configurado para este estabelecimento.' });
 
-    const { amount, description, customerEmail, customerName, customerPhone, returnUrl, completionUrl } = req.body || {};
+    const { amount, description, customerEmail, customerName, customerPhone, customerTaxId, returnUrl, completionUrl } = req.body || {};
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valor e obrigatorio.' });
     }
@@ -368,31 +379,30 @@ router.post('/:establishmentId/pay-card', async (req, res) => {
     // Cliente pre-cadastrado e opcional: sem email o checkout coleta os dados na pagina hospedada.
     let customerId;
     if (customerEmail) {
-      const customerPayload = { email: String(customerEmail) };
-      if (customerName) customerPayload.name = String(customerName);
-      if (customerPhone) customerPayload.cellphone = String(customerPhone);
-      const customerResult = await abacateRequest('POST', '/customers/create', apiKey, customerPayload);
-      customerId = (customerResult.data && customerResult.data.id) || customerResult.id;
+      const customerResult = await createCustomer(config.provider, config.apiKey, {
+        email: customerEmail,
+        name: customerName,
+        cellphone: customerPhone,
+        taxId: customerTaxId
+      }, config);
+      customerId = customerResult.data?.id || customerResult.id;
     }
 
-    const productResult = await abacateRequest('POST', '/products/create', apiKey, {
+    const productResult = await createProduct(config.provider, config.apiKey, {
       externalId: `portal-${est.id}-${Date.now()}`,
       name: String(description || 'Agendamento'),
-      price: Math.round(amount * 100),
-      currency: 'BRL'
-    });
-    const productId = (productResult.data && productResult.data.id) || productResult.id;
+      price: amount
+    }, config);
+    const productId = productResult.data?.id || productResult.id;
 
     const isHttpUrl = (v) => typeof v === 'string' && /^https?:\/\//i.test(v);
-    const checkoutPayload = {
+    const checkoutResult = await createCheckout(config.provider, config.apiKey, {
       items: [{ id: productId, quantity: 1 }],
-      methods: ['CARD']
-    };
-    if (customerId) checkoutPayload.customerId = customerId;
-    if (isHttpUrl(returnUrl)) checkoutPayload.returnUrl = returnUrl;
-    if (isHttpUrl(completionUrl)) checkoutPayload.completionUrl = completionUrl;
+      customerId,
+      returnUrl,
+      completionUrl
+    }, config);
 
-    const checkoutResult = await abacateRequest('POST', '/checkouts/create', apiKey, checkoutPayload);
     res.json(checkoutResult);
   } catch (err) {
     console.error('ERROR POST /api/portal/:id/pay-card:', err.message, err.responseData || '');
@@ -407,10 +417,10 @@ router.get('/:establishmentId/check-pix/:pixId', async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
-    const apiKey = est.abacatePayApiKey;
-    if (!apiKey) return res.status(400).json({ error: 'Pagamento nao disponivel.' });
+    const config = getPaymentConfig(est);
+    if (!config.apiKey) return res.status(400).json({ error: 'Pagamento nao configurado.' });
 
-    const result = await abacateRequest('GET', `/transparents/check?id=${req.params.pixId}`, apiKey);
+    const result = await checkPixPayment(config.provider, config.apiKey, req.params.pixId, config);
     res.json(result);
   } catch (err) {
     console.error('ERROR GET /api/portal/:id/check-pix:', err.message);

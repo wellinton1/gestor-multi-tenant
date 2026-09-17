@@ -1,184 +1,159 @@
 const express = require('express');
 const store = require('../data/store');
 const { requireLogin, requireEstablishment } = require('../middleware/auth');
+const {
+  getAvailableProviders,
+  createPixPayment,
+  checkPixPayment,
+  createCustomer,
+  createCheckout,
+  createProduct,
+  listProducts
+} = require('../utils/payment-providers');
 
 const router = express.Router();
 router.use(requireLogin, requireEstablishment);
 
-const ABACATEPAY_BASE = 'https://api.abacatepay.com/v2';
-
-function getApiKey(estId) {
+function getPaymentConfig(estId) {
   const est = store.findById('establishments', estId);
-  return est && est.abacatePayApiKey ? est.abacatePayApiKey : null;
-}
-
-async function abacateRequest(method, path, apiKey, body) {
-  const opts = {
-    method,
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    }
+  if (!est) return null;
+  return {
+    provider: est.pixProvider || 'abacatepay',
+    apiKey: est.pixApiKey || est.abacatePayApiKey || '',
+    baseUrl: est.pixBaseUrl || '',
+    extraHeaders: est.pixExtraHeaders ? JSON.parse(est.pixExtraHeaders) : {}
   };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${ABACATEPAY_BASE}${path}`, opts);
-  let data;
-  try { data = await res.json(); } catch (e) { data = null; }
-  if (!res.ok) {
-    const errMsg = (data && (data.error || data.errorDetail || data.message)) || `AbacatePay retornou ${res.status}`;
-    const err = new Error(errMsg);
-    err.responseData = data;
-    throw err;
-  }
-  return data;
 }
 
-router.put('/api-key', (req, res, next) => {
+router.get('/providers', (req, res) => {
+  res.json({ providers: getAvailableProviders() });
+});
+
+router.get('/config', (req, res) => {
+  const config = getPaymentConfig(req.session.establishmentId);
+  if (!config) return res.json({ configured: false });
+  res.json({
+    configured: !!config.apiKey,
+    provider: config.provider,
+    masked: config.apiKey ? '...' + config.apiKey.slice(-6) : null
+  });
+});
+
+router.put('/config', async (req, res, next) => {
   try {
     const estId = req.session.establishmentId;
-    const { apiKey } = req.body || {};
-    const value = String(apiKey || '').trim();
-    if (!value) {
-      return res.status(400).json({ error: 'API key obrigatoria.' });
+    const { provider, apiKey, baseUrl, extraHeaders } = req.body || {};
+    
+    const providers = getAvailableProviders().map(p => p.id);
+    if (!providers.includes(provider)) {
+      return res.status(400).json({ error: 'Provedor inválido' });
     }
-    store.update('establishments', estId, { abacatePayApiKey: value });
-    res.json({ ok: true });
+
+    const updateData = {
+      pixProvider: provider,
+      pixApiKey: String(apiKey || '').trim(),
+      pixBaseUrl: provider === 'generic' ? String(baseUrl || '').trim() : '',
+      pixExtraHeaders: provider === 'generic' && extraHeaders ? JSON.stringify(extraHeaders) : ''
+    };
+
+    // Mantém compatibilidade com campo antigo
+    if (provider === 'abacatepay') {
+      updateData.abacatePayApiKey = updateData.pixApiKey;
+    }
+
+    store.update('establishments', estId, updateData);
+    res.json({ ok: true, provider });
   } catch (err) { next(err); }
 });
 
-router.delete('/api-key', (req, res, next) => {
+router.delete('/config', (req, res, next) => {
   try {
     const estId = req.session.establishmentId;
-    store.update('establishments', estId, { abacatePayApiKey: '' });
+    store.update('establishments', estId, {
+      pixProvider: 'abacatepay',
+      pixApiKey: '',
+      pixBaseUrl: '',
+      pixExtraHeaders: '',
+      abacatePayApiKey: ''
+    });
     res.json({ ok: true });
   } catch (err) { next(err); }
-});
-
-router.get('/api-key', (req, res) => {
-  const estId = req.session.establishmentId;
-  const key = getApiKey(estId);
-  res.json({ configured: !!key, masked: key ? '...' + key.slice(-6) : null });
 });
 
 router.post('/create-customer', async (req, res, next) => {
   try {
-    const estId = req.session.establishmentId;
-    const apiKey = getApiKey(estId);
-    if (!apiKey) return res.status(400).json({ error: 'Configure a API key do AbacatePay nas Configuracoes.' });
+    const config = getPaymentConfig(req.session.establishmentId);
+    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { email, name, cellphone, taxId } = req.body || {};
-    if (!email) return res.status(400).json({ error: 'Email do cliente e obrigatorio.' });
+    if (!email) return res.status(400).json({ error: 'Email do cliente é obrigatório.' });
 
-    const payload = { email };
-    if (name) payload.name = name;
-    if (cellphone) payload.cellphone = cellphone;
-    if (taxId) payload.taxId = taxId;
-
-    const result = await abacateRequest('POST', '/customers/create', apiKey, payload);
+    const result = await createCustomer(config.provider, config.apiKey, { email, name, cellphone, taxId }, config);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.post('/create-checkout', async (req, res, next) => {
   try {
-    const estId = req.session.establishmentId;
-    const apiKey = getApiKey(estId);
-    if (!apiKey) return res.status(400).json({ error: 'Configure a API key do AbacatePay nas Configuracoes.' });
+    const config = getPaymentConfig(req.session.establishmentId);
+    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { items, customerId, methods, returnUrl, completionUrl } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Itens sao obrigatorios.' });
+      return res.status(400).json({ error: 'Itens são obrigatórios.' });
     }
 
-    const payload = {
-      items,
-      frequency: 'ONE_TIME',
-      methods: methods || ['PIX']
-    };
-    if (customerId) payload.customerId = customerId;
-    if (returnUrl) payload.returnUrl = returnUrl;
-    if (completionUrl) payload.completionUrl = completionUrl;
-
-    const result = await abacateRequest('POST', '/checkouts/create', apiKey, payload);
+    const result = await createCheckout(config.provider, config.apiKey, { items, customerId, methods, returnUrl, completionUrl }, config);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.post('/create-pix', async (req, res, next) => {
   try {
-    const estId = req.session.establishmentId;
-    const apiKey = getApiKey(estId);
-    if (!apiKey) return res.status(400).json({ error: 'Configure a API key do AbacatePay nas Configuracoes.' });
+    const config = getPaymentConfig(req.session.establishmentId);
+    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { amount, description, expiresIn, customer } = req.body || {};
     if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Valor e obrigatorio e deve ser maior que zero.' });
+      return res.status(400).json({ error: 'Valor é obrigatório e deve ser maior que zero.' });
     }
 
-    const payload = {
-      method: 'PIX',
-      data: {
-        amount: Math.round(amount * 100),
-        description: String(description || 'Pagamento')
-      }
-    };
-    if (expiresIn) payload.data.expiresIn = expiresIn;
-    if (customer && typeof customer === 'object' && customer.name && customer.email && customer.cellphone) {
-      payload.data.customer = {
-        name: String(customer.name),
-        email: String(customer.email),
-        cellphone: String(customer.cellphone)
-      };
-      if (customer.taxId) payload.data.customer.taxId = String(customer.taxId);
-    }
-
-    const result = await abacateRequest('POST', '/transparents/create', apiKey, payload);
+    const result = await createPixPayment(config.provider, config.apiKey, { amount, description, expiresIn, customer }, config);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.get('/check/:id', async (req, res, next) => {
   try {
-    const estId = req.session.establishmentId;
-    const apiKey = getApiKey(estId);
-    if (!apiKey) return res.status(400).json({ error: 'Configure a API key do AbacatePay nas Configuracoes.' });
+    const config = getPaymentConfig(req.session.establishmentId);
+    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
-    const result = await abacateRequest('GET', `/transparents/check?id=${req.params.id}`, apiKey);
+    const result = await checkPixPayment(config.provider, config.apiKey, req.params.id, config);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.post('/create-product', async (req, res, next) => {
   try {
-    const estId = req.session.establishmentId;
-    const apiKey = getApiKey(estId);
-    if (!apiKey) return res.status(400).json({ error: 'Configure a API key do AbacatePay nas Configuracoes.' });
+    const config = getPaymentConfig(req.session.establishmentId);
+    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { externalId, name, price, description } = req.body || {};
     if (!externalId || !name || !price) {
-      return res.status(400).json({ error: 'externalId, name e price sao obrigatorios.' });
+      return res.status(400).json({ error: 'externalId, name e price são obrigatórios.' });
     }
 
-    const payload = {
-      externalId,
-      name,
-      price: Math.round(price * 100),
-      currency: 'BRL'
-    };
-    if (description) payload.description = description;
-
-    const result = await abacateRequest('POST', '/products/create', apiKey, payload);
+    const result = await createProduct(config.provider, config.apiKey, { externalId, name, price, description }, config);
     res.json(result);
   } catch (err) { next(err); }
 });
 
 router.get('/products', async (req, res, next) => {
   try {
-    const estId = req.session.establishmentId;
-    const apiKey = getApiKey(estId);
-    if (!apiKey) return res.status(400).json({ error: 'Configure a API key do AbacatePay nas Configuracoes.' });
+    const config = getPaymentConfig(req.session.establishmentId);
+    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
-    const result = await abacateRequest('GET', '/products/list', apiKey);
+    const result = await listProducts(config.provider, config.apiKey, config);
     res.json(result);
   } catch (err) { next(err); }
 });

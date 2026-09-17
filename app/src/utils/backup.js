@@ -127,9 +127,9 @@ function listBackups() {
 
 async function createBackup(kind) {
   ensureBackupDir();
-  // Drena a fila de escrita para garantir que o db.json em disco esteja
-  // consistente antes de entrar no zip.
-  await store.writeDB(store.readDB());
+  // Exporta o estado atual do PostgreSQL para data/db.json para que o zip
+  // continue self-contained (restauravel em qualquer instalacao).
+  await store.exportSnapshot(store.DB_FILE);
 
   const filename = `backup-${kind}-${zipTimestamp(new Date())}.zip`;
   const dest = path.join(BACKUP_DIR, filename);
@@ -146,6 +146,9 @@ async function createBackup(kind) {
   };
   addDir(APP_ROOT);
   zip.writeZip(dest);
+  // Remove o export temporario: o PostgreSQL passa a ser a fonte da verdade.
+  // (Se ficasse, o proximo boot re-importaria um snapshot possivelmente antigo.)
+  try { fs.unlinkSync(store.DB_FILE); } catch (e) { /* ignora */ }
   return { filename, sizeBytes: fs.statSync(dest).size };
 }
 
@@ -202,8 +205,8 @@ async function restoreBackup(filename) {
     // 3. Copia por cima do projeto (sobrescreve arquivos existentes).
     copyContained(tmp, APP_ROOT);
 
-    // 4. Invalida o cache do store para ler o db.json restaurado.
-    store.reloadFromDisk();
+    // 4. Importa o db.json restaurado para o PostgreSQL (fonte da verdade).
+    await store.reloadFromDisk();
 
     return { ok: true, safetyBackup: safety.filename };
   } finally {

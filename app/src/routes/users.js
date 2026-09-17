@@ -45,6 +45,12 @@ router.get('/me', (req, res) => {
 
 router.get('/', requireEstablishment, (req, res, next) => {
   try {
+    // Lista de usuarios da loja: so administradores (da loja ou da
+    // plataforma). Operadores nao devem ver emails/perfis de outros usuarios.
+    const me = store.findById('users', req.session.userId);
+    if (!me || me.role !== 'admin') {
+      return res.status(403).json({ error: 'Apenas administradores podem ver usuarios.' });
+    }
     const estId = req.session.establishmentId;
     // Inclui admins globais e usuarios associados explicitamente a este estabelecimento.
     const users = store.all('users').filter((user) => {
@@ -120,7 +126,9 @@ router.post('/by-establishment/:id', (req, res, next) => {
       name: String(name).trim(),
       email: normalizedEmail,
       passwordHash: bcrypt.hashSync(String(password), BCRYPT_ROUNDS),
-      role: role || 'operator',
+      // So o admin da plataforma pode criar outro admin; admin da loja
+      // cria apenas operadores (evita escalacao de privilegio).
+      role: role === 'admin' && isGlobalAdmin(currentUser) ? 'admin' : 'operator',
       allowedEstablishmentIds: [estId],
       createdAt: new Date().toISOString()
     });

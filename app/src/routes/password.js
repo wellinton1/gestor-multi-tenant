@@ -82,6 +82,7 @@ router.get('/admin-users', (req, res) => {
     role: u.role || 'operator',
     allowedEstablishmentIds: u.allowedEstablishmentIds || null,
     passwordChangedAt: u.passwordChangedAt || null,
+    twoFactorEnabled: !!u.twoFactorEnabled,
     createdAt: u.createdAt
   }));
   res.json(users);

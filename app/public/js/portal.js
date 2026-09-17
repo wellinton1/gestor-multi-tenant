@@ -80,6 +80,7 @@ let bookingCooldownTimer = null;
 let selectedTime = null;
 let availableSlots = [];
 let loadingSlots = false;
+let appliedCoupon = null;
 
 async function boot() {
   const id = getEstablishmentId();
@@ -191,7 +192,15 @@ function renderPage() {
                   </div>
                 </div>
               `)}
-              <div class="portal-total">Total: <strong>${formatMoney(subtotal)}</strong></div>
+              ${appliedCoupon ? `
+                <div class="portal-discount-row" style="display:flex;justify-content:space-between;margin:8px 0;padding-top:8px;border-top:1px solid var(--border,#e5e5e5);color:#10b981;font-weight:600;">
+                  <span>Desconto (${escapeHtml(appliedCoupon.code)}):</span>
+                  <span>− ${formatMoney(appliedCoupon.discount)}</span>
+                </div>
+                <div class="portal-total" style="color:var(--text);">Total: <strong>${formatMoney(subtotal - appliedCoupon.discount)}</strong></div>
+              ` : `
+                <div class="portal-total">Total: <strong>${formatMoney(subtotal)}</strong></div>
+              `}
             </div>
             <form id="booking-form" class="portal-booking-form">
               <div class="form-field"><label>Nome completo *</label><input type="text" name="clientName" required ${cooldownActive ? 'disabled' : ''} /></div>
@@ -205,13 +214,21 @@ function renderPage() {
                 <div class="available-times-grid" id="time-slots-grid"></div>
                 <input type="hidden" name="dateTime" id="booking-datetime" />
               </div>
+              <div class="form-field">
+                <label>Cupom de desconto</label>
+                <div style="display:flex;gap:8px;">
+                  <input type="text" name="couponCode" id="coupon-code-input" placeholder="Digite o código do cupom" style="flex:1;text-transform:uppercase;" ${cooldownActive ? 'disabled' : ''} />
+                  <button type="button" class="btn btn-secondary" id="apply-coupon-btn" ${cooldownActive ? 'disabled' : ''}>Aplicar</button>
+                </div>
+                <div id="coupon-message" style="margin-top:6px;font-size:13px;"></div>
+              </div>
               <div class="form-field"><label>Observacao</label><textarea name="notes" placeholder="Informe detalhes, preferencia ou observacoes para o atendimento" ${cooldownActive ? 'disabled' : ''}></textarea></div>
             </form>
           </aside>
         </div>
       </div>
       <div class="portal-bottom-bar">
-        <div class="bottom-summary"><span>${itemCount} item${itemCount === 1 ? '' : 's'}</span><strong>${formatMoney(subtotal)}</strong></div>
+        <div class="bottom-summary"><span>${itemCount} item${itemCount === 1 ? '' : 's'}</span><strong>${formatMoney(appliedCoupon ? subtotal - appliedCoupon.discount : subtotal)}</strong></div>
         <button type="button" class="btn btn-primary bottom-book-btn" id="bottom-book-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Agendar Horário'}</button>
       </div>
     </div>
@@ -306,7 +323,8 @@ function renderPage() {
       clientEmail: fd.get('clientEmail'),
       selectedServices: safeSelectedServices.filter((item) => item && item.qty > 0),
       dateTime: fd.get('dateTime'),
-      notes: fd.get('notes')
+      notes: fd.get('notes'),
+      couponCode: fd.get('couponCode') || ''
     };
     if (!payload.dateTime) {
       alert('Por favor, selecione uma data e horario disponivel.');
@@ -338,10 +356,17 @@ function renderPage() {
       }
       const bookingTotal = data.total || 0;
       const hasPayment = data.hasPayment || false;
+      const subtotal = data.subtotal || bookingTotal;
+      const discount = data.discount || 0;
+      const appliedCoupon = data.appliedCoupon || null;
       selectedServices = [];
+      appliedCoupon = null; // reset local state after successful booking
       try {
         renderSuccess({
           total: bookingTotal,
+          subtotal,
+          discount,
+          appliedCoupon,
           hasPayment,
           clientName: payload.clientName,
           clientEmail: payload.clientEmail,
@@ -420,6 +445,49 @@ function renderPage() {
       document.getElementById('booking-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
+
+  // Coupon apply button
+  const applyCouponBtn = document.getElementById('apply-coupon-btn');
+  const couponCodeInput = document.getElementById('coupon-code-input');
+  const couponMessage = document.getElementById('coupon-message');
+  if (applyCouponBtn && couponCodeInput) {
+    applyCouponBtn.addEventListener('click', async () => {
+      const code = couponCodeInput.value.trim().toUpperCase();
+      if (!code) {
+        couponMessage.textContent = 'Digite um código de cupom.';
+        couponMessage.style.color = '#ef4444';
+        return;
+      }
+      const serviceIds = (selectedServices || []).map((s) => s.id);
+      const subtotal = (selectedServices || []).reduce((sum, item) => sum + (item.price || 0) * (item.qty || 0), 0);
+      try {
+        const res = await fetch(`/api/coupons/validate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCsrfToken()
+          },
+          body: JSON.stringify({ code, serviceIds, subtotal })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.valid) {
+          appliedCoupon = null;
+          couponMessage.textContent = data.error || 'Cupom inválido.';
+          couponMessage.style.color = '#ef4444';
+          renderPage(); // re-render to update summary
+          return;
+        }
+        appliedCoupon = data.coupon;
+        couponMessage.textContent = `Cupom aplicado! Desconto de ${formatMoney(data.coupon.discount)}`;
+        couponMessage.style.color = '#10b981';
+        renderPage(); // re-render to update summary
+      } catch (err) {
+        appliedCoupon = null;
+        couponMessage.textContent = 'Erro ao validar cupom.';
+        couponMessage.style.color = '#ef4444';
+      }
+    });
+  }
 }
  
 
@@ -439,6 +507,9 @@ function startBookingCooldown() {
 function renderSuccess(bookingInfo) {
   const info = bookingInfo || {};
   const hasPayment = info.hasPayment && info.total > 0;
+  const subtotal = info.subtotal || info.total;
+  const discount = info.discount || 0;
+  const appliedCoupon = info.appliedCoupon || null;
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -455,9 +526,27 @@ function renderSuccess(bookingInfo) {
         <div class="check-circle">${CHECK_ICON}</div>
         <p style="margin:0 0 8px 0; font-weight:700;">Sua solicitação foi enviada com sucesso.</p>
         <p style="color:var(--text-muted);font-size:14.5px;">O estabelecimento receberá seu pedido e entrará em contato para confirmar o horário.</p>
+        ${discount > 0 && appliedCoupon ? `
+          <div style="margin-top:12px;padding:12px;background:rgba(16,185,129,0.1);border-radius:8px;border:1px solid #10b981;">
+            <div style="display:flex;justify-content:space-between;color:#10b981;font-weight:600;font-size:13px;">
+              <span>Subtotal:</span>
+              <span>${formatMoney(subtotal)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;color:#10b981;font-weight:600;font-size:13px;margin-top:4px;">
+              <span>Desconto (${escapeHtml(appliedCoupon.code)}):</span>
+              <span>− ${formatMoney(discount)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:4px;">
+              <span>Total:</span>
+              <span>${formatMoney(info.total)}</span>
+            </div>
+          </div>
+        ` : `
+          <p style="font-weight:600;margin:12px 0 0 0;">Total: ${formatMoney(info.total)}</p>
+        `}
         ${hasPayment ? `
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e5e5e5);">
-            <p style="font-weight:600;margin:0 0 4px 0;">Total: ${formatMoney(info.total)}</p>
+            <p style="font-weight:600;margin:0 0 4px 0;">Total a pagar: ${formatMoney(info.total)}</p>
             <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px 0;">Pague agora para garantir seu agendamento.</p>
             <div style="display:flex;gap:8px;margin-bottom:12px;">
               <button type="button" class="pay-amount-opt" data-mode="full" style="flex:1;padding:10px 8px;border:2px solid var(--accent);border-radius:8px;background:rgba(var(--accent-rgb),0.08);cursor:pointer;font-size:13px;color:inherit;display:flex;flex-direction:column;gap:2px;align-items:center;">

@@ -205,8 +205,10 @@ router.delete('/:id', (req, res, next) => {
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
     const user = store.findById('users', req.session.userId);
     if (!user) return res.status(401).json({ error: 'Nao autenticado.' });
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: 'Apenas administradores podem remover estabelecimentos.' });
+    // Remover loja e plataforma: apaga loja + todos os dados vinculados.
+    // So o admin da plataforma (global) pode fazer isso.
+    if (!isGlobalAdmin(user)) {
+      return res.status(403).json({ error: 'Apenas o administrador da plataforma pode remover estabelecimentos.' });
     }
     if (!hasAccessToEstablishment(user, est.id)) {
       return res.status(403).json({ error: 'Acesso ao estabelecimento nao autorizado.' });
