@@ -13,6 +13,11 @@ app/data/
 !package.json
 !package-lock.json
 
+# PostgreSQL embutido (Windows): binarios ficam, dados do banco nunca vao pro git
+pgdata/
+pgdata.log
+*.pg-init-pw.txt
+
 # Logs
 logs/
 *.log
