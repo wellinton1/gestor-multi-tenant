@@ -338,6 +338,15 @@ ok "Dependencias instaladas."
 
 # ---------- 9. systemd service ----------
 SERVICE_NAME="gestor-multi-tenant"
+# Portas abaixo de 1024 exigem privilegio; como o servico roda como usuario
+# sem privilegios, concedemos apenas a capability de bind em porta baixa
+# (em vez de rodar como root). Sem isso o app "pula" para a porta 81.
+UNIT_CAPS=""
+if [ "$APP_PORT" -lt 1024 ]; then
+  info "Porta $APP_PORT e privilegiada (<1024): concedendo CAP_NET_BIND_SERVICE ao servico."
+  UNIT_CAPS="AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE"
+fi
 info "Criando servico systemd '$SERVICE_NAME'..."
 cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
 [Unit]
@@ -355,6 +364,7 @@ Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+$UNIT_CAPS
 StandardOutput=journal
 StandardError=journal
 
@@ -375,6 +385,7 @@ fi
 
 info "Testando a aplicacao em http://127.0.0.1:$APP_PORT ..."
 APP_UP=false
+EFFECTIVE_PORT="$APP_PORT"
 for _ in $(seq 1 15); do
   if curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:$APP_PORT/"; then
     APP_UP=true
@@ -385,8 +396,18 @@ done
 if [ "$APP_UP" = true ]; then
   ok "Servico '$SERVICE_NAME' respondendo na porta $APP_PORT."
 else
-  warn "O servico esta ativo mas ainda nao respondeu em http://127.0.0.1:$APP_PORT."
-  warn "Verifique os logs: journalctl -u $SERVICE_NAME -n 50 --no-pager"
+  # A aplicacao pode ter subido em outra porta (ex.: porta ocupada/sem permissao);
+  # descobre a porta real pela mensagem "Servidor rodando em http://localhost:NNNN".
+  DISCOVERED_PORT="$(journalctl -u "$SERVICE_NAME" --no-pager -n 100 2>/dev/null | grep -oE 'http://localhost:[0-9]+' | tail -n1 | sed -E 's/.*:([0-9]+)$/\1/' || true)"
+  if [ -n "$DISCOVERED_PORT" ] && [ "$DISCOVERED_PORT" != "$APP_PORT" ] \
+     && curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:$DISCOVERED_PORT/"; then
+    EFFECTIVE_PORT="$DISCOVERED_PORT"
+    warn "A aplicacao subiu na porta $EFFECTIVE_PORT em vez de $APP_PORT (a porta configurada nao pode ser usada)."
+    warn "Se quiser a porta $APP_PORT, ajuste o motivo e rode: systemctl restart $SERVICE_NAME"
+  else
+    warn "O servico esta ativo mas ainda nao respondeu em http://127.0.0.1:$APP_PORT."
+    warn "Verifique os logs: journalctl -u $SERVICE_NAME -n 50 --no-pager"
+  fi
 fi
 
 # ---------- 10. firewall (ufw), se existir ----------
@@ -453,7 +474,7 @@ if [[ "$SETUP_NGINX" =~ ^[sS]$ ]]; then
     echo "  Acesse em: http://$DOMAIN_NAME"
   fi
 else
-  echo "  Acesse em: http://$SERVER_IP:$APP_PORT"
+  echo "  Acesse em: http://$SERVER_IP:$EFFECTIVE_PORT"
 fi
 echo ""
 echo "  Email do administrador : $ADMIN_EMAIL"
