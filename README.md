@@ -5,9 +5,9 @@ e outros nichos): dashboard, agendamentos/pedidos, clientes, funcionarios,
 servicos, configuracoes por estabelecimento, e um **portal do cliente** publico
 para que seus clientes agendem online.
 
-Feito para rodar em qualquer VPS Linux (Ubuntu/Debian) com pouquissimos
-recursos: Node.js puro + um banco de dados em arquivo JSON (sem MySQL,
-Postgres ou qualquer coisa que precise compilar nada na VPS).
+Feito para rodar em qualquer VPS Linux (Ubuntu/Debian): Node.js + PostgreSQL
+(instalado e configurado automaticamente pelo instalador; nenhuma dependencia
+precisa compilar nada na VPS).
 
 ---
 
@@ -29,6 +29,8 @@ sudo bash scripts/install.sh
 Isso e tudo. O script:
 
 - Instala o Node.js automaticamente se ainda nao existir na VPS;
+- Instala o PostgreSQL, cria o usuario/banco da aplicacao e configura a
+  `DATABASE_URL` no `.env` (pode rodar de novo sem perder dados);
 - Cria um usuario de sistema dedicado (sem shell) so para rodar a aplicacao;
 - Instala as dependencias (`npm install`) - todas em JavaScript puro, sem
   compilacao nativa, entao funciona em qualquer VPS sem precisar instalar
@@ -76,22 +78,23 @@ Depois abra no navegador:
 http://localhost:3000
 ```
 
-Credenciais padrão iniciais:
+Credenciais iniciais: as definidas em `app\.env` (`ADMIN_EMAIL`/`ADMIN_PASSWORD`).
+Se nenhuma estiver definida, o sistema abre a tela de **Setup** na primeira vez
+que você acessar a URL e você cria o administrador por ela.
 
-```text
-Email: admin@admin.com
-Senha: admin123
-```
-
-> Se quiser alterar a porta, crie um arquivo `.env` na pasta `app` com as variáveis desejadas.
+> O banco no Windows roda no PostgreSQL embutido (pasta `pgsql/`) e é iniciado
+> junto com o servidor - não precisa instalar nada. Se a porta estiver em uso,
+> ajuste `PORT` no arquivo `app\.env`.
 
 ---
 
 ## Rodando em uma VPS Linux
 
-Este projeto foi feito para rodar em uma VPS Linux (Ubuntu/Debian) com poucos recursos.
+Testado em Ubuntu 22.04, 24.04 e 26.04 (e Debian). O instalador instala o
+Node.js e o PostgreSQL sozinho - você só precisa de uma VPS limpa com acesso
+root/`sudo`.
 
-1. Faça upload da pasta inteira do projeto para a VPS via `scp`, `sftp` ou `rsync`.
+1. Baixe o projeto na VPS (via `git clone`, `scp`, `sftp` ou `rsync`).
 2. Conecte-se à VPS via SSH e entre na pasta do projeto:
 
 ```bash
@@ -107,6 +110,16 @@ sudo bash scripts/install.sh
 4. Responda às perguntas de instalação (pasta, porta, e-mail/senha do administrador, domínio/HTTPS opcional).
 
 No final, o instalador mostra a URL de acesso e as credenciais do administrador.
+
+Para automação (ex.: *user-data* de uma instância AWS EC2), dá para rodar sem
+perguntas nenhuma:
+
+```bash
+sudo ASSUME_YES=1 \
+     ADMIN_EMAIL=admin@seudominio.com \
+     DOMAIN_NAME=painel.seudominio.com SETUP_NGINX=S SETUP_SSL=S \
+     bash scripts/install.sh
+```
 
 ### Comandos úteis na VPS
 
@@ -137,10 +150,11 @@ Abra a URL mostrada no final da instalacao (ex: `http://SEU_IP:3000` ou
 apareceram no resumo da instalacao (tambem salvos em
 `/opt/gestor-multi-tenant/.env`).
 
-Na primeira execucao o sistema ja cria um estabelecimento de demonstracao
-("Barbearia Elite") com dados de exemplo, so para voce ver o sistema
-funcionando. Voce pode apagar esse estabelecimento e criar os seus reais
-a qualquer momento em "Novo Estabelecimento".
+Se `SEED_DEMO_DATA=true` estiver no `.env`, o sistema cria um estabelecimento
+de demonstracao ("Barbearia Elite") com dados de exemplo, so para voce ver o
+sistema funcionando (o instalador de VPS deixa `false` por padrao, para
+producao). Voce pode criar seus estabelecimentos reais a qualquer momento em
+"Novo Estabelecimento".
 
 ### Portal do Cliente
 
@@ -190,6 +204,7 @@ para aplicar.
 
 | Variavel          | O que faz                                                                 |
 |-------------------|----------------------------------------------------------------------------|
+| `DATABASE_URL`    | Conexao PostgreSQL (`postgres://usuario:senha@127.0.0.1:5432/banco`). Obrigatoria: sem ela o servidor nao inicia. Preenchida pelo instalador. |
 | `PORT`            | Porta interna do Node.js (o Nginx, se configurado, aponta para ela)         |
 | `SESSION_SECRET`  | Chave aleatoria usada para assinar o cookie de login. Gerada automaticamente. |
 | `ADMIN_EMAIL`     | Email de login do administrador                                            |
@@ -202,10 +217,14 @@ para aplicar.
 
 ### Exemplos de `.env`
 
-Windows (`app\.env`):
+Windows (`app\.env`) - o projeto traz o PostgreSQL embutido em `pgsql/`:
 
 ```text
 PORT=3000
+DATABASE_URL=postgres://postgres:suasenha@127.0.0.1:5432/gestor
+PG_SUPER_USER=postgres
+PG_SUPER_PASSWORD=suasenha
+PG_BIN=C:\caminho\para\gestor-multi-tenant\pgsql\bin
 SESSION_SECRET=alguma-chavesecreta
 ADMIN_EMAIL=admin@admin.com
 ADMIN_PASSWORD=admin123
@@ -213,23 +232,23 @@ SEED_DEMO_DATA=true
 COOKIE_SECURE=false
 ```
 
-Linux / VPS (`/opt/gestor-multi-tenant/.env`):
+Linux / VPS (`/opt/gestor-multi-tenant/.env`) - gerado pelo instalador:
 
 ```text
 PORT=3000
-SESSION_SECRET=alguma-chavesecreta
+DATABASE_URL=postgres://gestor:senha-gerada@127.0.0.1:5432/gestor
+SESSION_SECRET=chave-gerada-automaticamente
 ADMIN_EMAIL=admin@admin.com
-ADMIN_PASSWORD=admin123
-SEED_DEMO_DATA=true
+ADMIN_PASSWORD=senha-gerada
+SEED_DEMO_DATA=false
 COOKIE_SECURE=false
 ```
 
 > Nota: `ADMIN_EMAIL`/`ADMIN_PASSWORD` so sao usados para **criar** o usuario
 > administrador na primeira vez que o servidor roda. Depois disso, mudar essas
 > variaveis no `.env` nao muda a senha ja salva - isso e proposital, para
-> nao resetar sua senha sem querer a cada reinicio. Se precisar trocar a senha
-> depois, apague o arquivo `data/db.json` (voce perde todos os dados!) ou peca
-> ajuda para adicionar uma tela de "trocar senha" no sistema.
+> nao resetar sua senha sem querer a cada reinicio. Use a tela de "Recuperar
+> senha" do proprio sistema para troca-la depois.
 
 ---
 
@@ -242,11 +261,14 @@ gestor-multi-tenant/
 │   ├── package.json
 │   ├── .env.example        # modelo do arquivo de configuracao
 │   ├── src/
-│   │   ├── data/           # camada de dados (armazenamento em JSON)
+│   │   ├── data/           # camada de dados (store PostgreSQL + seed)
 │   │   ├── middleware/      # autenticacao por sessao
-│   │   └── routes/         # rotas da API (clientes, funcionarios, etc.)
+│   │   ├── routes/         # rotas da API (clientes, funcionarios, etc.)
+│   │   └── utils/           # PostgreSQL, backups, e-mail, pagamentos, etc.
 │   ├── public/              # frontend (HTML/CSS/JS puro, sem build)
-│   └── data/                 # onde o banco de dados (db.json) e criado em runtime
+│   └── data/                 # runtime: sessoes e backups internos em .zip
+├── pgsql/                  # PostgreSQL embutido (somente Windows)
+├── pgdata/                 # dados do PostgreSQL embutido (somente Windows)
 └── scripts/
     ├── install.sh           # instalador principal
     ├── start.sh / stop.sh / restart.sh / logs.sh
@@ -259,20 +281,22 @@ gestor-multi-tenant/
 
 ## Como os dados sao guardados
 
-Para manter a instalacao simples (sem precisar de MySQL/Postgres na VPS), os
-dados ficam em um unico arquivo `app/data/db.json`, escrito de forma segura
-(gravacao atomica) a cada alteracao. Isso e suficiente para o volume de uso de
-um pequeno/medio negocio (ou varios negocios/tenants). Recomendamos rodar
+Os dados ficam no PostgreSQL local (banco `gestor`, acessivel apenas em
+`127.0.0.1`), que e instalado e configurado automaticamente pelo
+`scripts/install.sh`. No Windows, o projeto usa o PostgreSQL embutido na pasta
+`pgsql/` (sem precisar instalar nada). Recomendamos rodar
 `sudo bash scripts/backup.sh` periodicamente (ou colocar num cron job) para
-ter copias de seguranca.
+ter copias de seguranca: o script gera um dump SQL do banco + a pasta `data/`
++ o `.env` em um unico `.tar.gz`.
 
 Exemplo de backup automatico diario as 3h da manha (`crontab -e` como root):
 
 ```
-0 3 * * * /usr/bin/bash /opt/gestor-multi-tenant/../scripts/backup.sh >> /var/log/gestor-backup.log 2>&1
+0 3 * * * /usr/bin/bash /caminho/do/projeto/scripts/backup.sh >> /var/log/gestor-backup.log 2>&1
 ```
 
-(ajuste o caminho do `scripts/backup.sh` conforme onde voce extraiu o projeto)
+(ajuste o caminho do `scripts/backup.sh` conforme onde esta o projeto clonado/extraido,
+ou copie a pasta `scripts/` para dentro de `/opt/gestor-multi-tenant/`)
 
 ---
 
@@ -282,8 +306,9 @@ Exemplo de backup automatico diario as 3h da manha (`crontab -e` como root):
 ```bash
 sudo journalctl -u gestor-multi-tenant -n 100 --no-pager
 ```
-Normalmente indica porta ja em uso, ou permissao de arquivo. Confira se outra
-aplicacao ja esta usando a porta configurada.
+Normalmente indica porta ja em uso, `DATABASE_URL` incorreta ou o PostgreSQL
+parado (`sudo systemctl status postgresql`). O instalador testa a aplicacao no
+final; se ele mostrou a URL respondendo, a instalacao esta OK.
 
 **Esqueci a senha do administrador**
 A senha gerada automaticamente aparece no resumo final do `install.sh` e fica
@@ -300,9 +325,9 @@ Edite `/opt/gestor-multi-tenant/.env` (porta) ou o arquivo do Nginx em
 
 ## Backups pelo painel (administrador)
 
-Alem do `scripts/backup.sh`, o proprio sistema faz backup **do site inteiro**
-(codigo + configuracoes + banco `db.json`) em um `.zip` salvo em
-`app/data/backups/`:
+Alem do `scripts/backup.sh` (que gera um dump SQL do PostgreSQL), o proprio
+sistema faz backup **do site inteiro** (codigo + configuracoes + dados) em um
+`.zip` salvo em `app/data/backups/`:
 
 - **Automatico**: a cada 6 horas (configuravel em `.env` via
   `BACKUP_INTERVAL_HOURS`), mantendo os 30 mais recentes (`BACKUP_MAX_FILES`);

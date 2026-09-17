@@ -10,6 +10,11 @@
 // Isso elimina a dependencia de um servico Windows/terminal aberto: o
 // run-server sobe tudo. Tambem resolve o problema historico de dois processos
 // escrevendo db.json (agora o PG serializa as escritas).
+//
+// Windows: usa o PostgreSQL embutido na pasta pgsql/ do projeto.
+// Linux: o caminho esperado e o PostgreSQL do sistema (instalado pelo
+// scripts/install.sh). Se DATABASE_URL conectar, o embutido nunca e tocado;
+// so se a conexao falhar e que ele tenta subir um cluster local.
 
 const path = require('path');
 const fs = require('fs');
@@ -17,10 +22,13 @@ const { spawn } = require('child_process');
 const { Client } = require('pg');
 const { COLLECTIONS } = require('../data/store');
 
+const IS_WINDOWS = process.platform === 'win32';
 const PROJECT_ROOT = path.join(__dirname, '..', '..', '..');
 const PG_BIN = process.env.PG_BIN || path.join(PROJECT_ROOT, 'pgsql', 'bin');
 const PGDATA = process.env.PGDATA || path.join(PROJECT_ROOT, 'pgdata');
 const PG_LOG = process.env.PG_LOG || path.join(PROJECT_ROOT, 'pgdata.log');
+const INITDB_BIN = path.join(PG_BIN, IS_WINDOWS ? 'initdb.exe' : 'initdb');
+const PG_CTL_BIN = path.join(PG_BIN, IS_WINDOWS ? 'pg_ctl.exe' : 'pg_ctl');
 
 function parseUrl(url) {
   const u = new URL(url);
@@ -57,13 +65,22 @@ function runCmd(exe, args, timeoutMs = 60000) {
 
 // Inicia o cluster (se necessario) e espera aceitar conexoes.
 async function startCluster(superCfg) {
+  if (!fs.existsSync(PG_CTL_BIN)) {
+    throw new Error(
+      `PostgreSQL embutido nao encontrado em ${PG_BIN}. ` + (IS_WINDOWS
+        ? 'Restaure a pasta pgsql/ do projeto ou rode scripts\\start.bat.'
+        : 'No Linux o projeto usa o PostgreSQL do sistema: instale com "sudo apt install postgresql" '
+          + 'e configure DATABASE_URL no .env (ex.: postgres://usuario:senha@127.0.0.1:5432/gestor), '
+          + 'ou rode o instalador: sudo bash scripts/install.sh')
+    );
+  }
   if (!(await clusterInitialized())) {
     console.log('[pg] pgdata nao inicializado — rodando initdb...');
     fs.mkdirSync(PGDATA, { recursive: true });
     const pwFile = path.join(PGDATA, '..', '.pg-init-pw.txt');
     fs.writeFileSync(pwFile, superCfg.password, 'utf-8');
     try {
-      await runCmd(path.join(PG_BIN, 'initdb.exe'), [
+      await runCmd(INITDB_BIN, [
         '-D', PGDATA, '-U', superCfg.user,
         `--pwfile=${pwFile}`, '--auth=scram-sha-256', '-E', 'UTF8'
       ], 120000);
@@ -72,7 +89,7 @@ async function startCluster(superCfg) {
     }
   }
   console.log('[pg] iniciando PostgreSQL via pg_ctl (porta', superCfg.port + ')...');
-  await runCmd(path.join(PG_BIN, 'pg_ctl.exe'), [
+  await runCmd(PG_CTL_BIN, [
     '-D', PGDATA, '-l', PG_LOG, '-o', `-p ${superCfg.port}`, 'start'
   ], 90000);
   // Espera conexoes (ate ~30s)

@@ -28,7 +28,7 @@ systemctl daemon-reload
 echo "Servico removido."
 
 if [ -d "$INSTALL_DIR" ]; then
-  read -rp "Tambem apagar a pasta de instalacao e TODOS os dados em $INSTALL_DIR? (s/N): " DELETE_DATA
+  read -rp "Tambem apagar a pasta de instalacao em $INSTALL_DIR? (o banco PostgreSQL e mantido) (s/N): " DELETE_DATA
   if [[ "$DELETE_DATA" =~ ^[sS]$ ]]; then
     read -rp "Fazer um backup antes de apagar? (S/n): " DO_BACKUP
     DO_BACKUP="${DO_BACKUP:-S}"
@@ -44,3 +44,9 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 
 echo "Desinstalacao concluida."
+echo ""
+echo "Observacao: o banco PostgreSQL da aplicacao NAO foi removido - seus dados"
+echo "continuam salvos. Se quiser apagar tudo de vez (IRREVERSIVEL), consulte a"
+echo "DATABASE_URL no .env da instalacao e rode:"
+echo "  sudo -u postgres dropdb NOME_DO_BANCO"
+echo "  sudo -u postgres dropuser NOME_DO_USUARIO"

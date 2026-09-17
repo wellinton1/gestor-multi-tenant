@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # update.sh - atualiza a aplicacao ja instalada com uma versao mais nova,
-# preservando os dados (data/db.json) e as configuracoes (.env).
+# preservando os dados (PostgreSQL + data/) e as configuracoes (.env).
 #
 # Uso: rode este script de dentro da pasta extraida da NOVA versao do zip:
 #   sudo bash scripts/update.sh [/opt/gestor-multi-tenant]
@@ -38,7 +38,9 @@ if ! command -v rsync >/dev/null 2>&1; then
 fi
 
 echo "Copiando novos arquivos (preservando data/ e .env)..."
-rsync -a --exclude 'data' --exclude '.env' --exclude 'node_modules' "$SOURCE_APP_DIR"/ "$INSTALL_DIR"/
+# Importante: '/data' com barra inicial e ancorado na raiz, senao o rsync
+# tambem excluiria src/data (mesmo bug do .gitignore que ja quebrou o app).
+rsync -a --exclude '/data' --exclude '/.env' --exclude 'node_modules' "$SOURCE_APP_DIR"/ "$INSTALL_DIR"/
 
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 

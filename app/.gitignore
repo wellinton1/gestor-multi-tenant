@@ -6,8 +6,8 @@ node_modules/
 .env.local
 .env.*.local
 
-# Data files
-data/
+# Data files (apenas a pasta de runtime ./data; NAO ignorar src/data)
+/data/
 *.db
 
 # Logs
@@ -47,4 +47,4 @@ tmp/
 # Backup files
 *.bak
 *.backup
-data/sessions/
+/data/sessions/
