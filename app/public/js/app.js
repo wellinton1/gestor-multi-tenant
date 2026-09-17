@@ -691,6 +691,7 @@ async function renderSelector() {
           <a href="#/backups" class="btn btn-secondary">${ICONS.archive} Backups</a>
           <a href="#/senhas" class="btn btn-secondary">${ICONS.lock} Usuarios e Senhas</a>
           <a href="#/seguranca" class="btn btn-secondary">${ICONS.shield} Inspecao de Seguranca</a>
+          <a href="#/manutencao" class="btn btn-secondary">${ICONS.wrench} Manutenção</a>
         ` : ''}
         <button class="btn btn-secondary" id="selector-logout">${ICONS.arrowRight} Sair</button>
       </div>
