@@ -3561,6 +3561,220 @@ function copyCmd(text, btn) {
   }
 }
 
+// ================= Workflow visual da Manutencao (estilo n8n) =================
+// Monta o mapa vivo Internet -> Porta -> App -> Bancos a partir do status real.
+// Nos arrastaveis (pointer), arestas recalculadas, zoom e clique = detalhes.
+const MAINT_FLOW_W = 180;
+const MAINT_FLOW_H = 68;
+
+function maintFlowColor(kind) {
+  return { net: '#38bdf8', entry: '#a78bfa', app: '#22c55e', db: '#f59e0b', ops: '#ec4899' }[kind] || '#6366f1';
+}
+
+function maintFlowModel(st) {
+  const c = st.counts || {};
+  const nodes = [
+    { id: 'internet', kind: 'net', title: 'Internet', sub: 'você + clientes', x: 10, y: 246,
+      lines: ['De onde chegam os acessos: navegador, celular, Google.'] },
+    { id: 'entry', kind: 'entry', title: 'Porta ' + st.env.port, sub: st.env.port === 80 ? 'HTTP sem :porta' : 'acesso com :' + st.env.port, x: 228, y: 246,
+      lines: ['Porta onde o sistema escuta.', st.env.port === 80 ? 'Na VPS com Nginx, ele repassa para o App.' : 'Local: abra http://localhost:' + st.env.port] },
+    { id: 'app', kind: 'app', title: 'App Node v' + st.version, sub: 'no ar há ' + formatUptime(st.uptimeSeconds), x: 446, y: 246,
+      lines: ['Processo Node ' + st.node + ' (' + st.platform + ').', 'Memória heap: ' + st.memory.heapUsedMB + ' MB.', 'Ambiente: ' + st.env.nodeEnv + '.'] },
+    { id: 'pg', kind: 'db', title: 'PostgreSQL', sub: (c.establishments || 0) + ' lojas · ' + (c.appointments || 0) + ' agend.', x: 664, y: 246,
+      lines: ['Banco compartilhado: todas as lojas sem banco dedicado moram aqui.', 'Isolamento RLS: ' + (st.env.rlsEnabled ? 'ATIVO (segunda barreira no banco).' : 'DESLIGADO — só em diagnóstico.')] },
+    { id: 'backups', kind: 'ops', title: 'Backups .zip', sub: st.backups.total + ' guardados', x: 446, y: 60,
+      lines: ['Cópia do site inteiro (código + banco).', st.backups.autoEnabled ? 'Automático a cada ' + st.backups.intervalHours + 'h.' : 'Automático PAUSADO — crie manualmente.',
+        st.backups.latest ? 'Último: ' + st.backups.latest.filename : 'Nenhum backup ainda.'] }
+  ];
+  const edges = [
+    { from: 'internet', fa: 'R', to: 'entry', ta: 'L', label: ':' + st.env.port },
+    { from: 'entry', fa: 'R', to: 'app', ta: 'L', label: 'localhost:' + st.env.port },
+    { from: 'app', fa: 'R', to: 'pg', ta: 'L', label: 'DATABASE_URL · RLS' },
+    { from: 'app', fa: 'T', to: 'backups', ta: 'B', label: 'zip' }
+  ];
+  // Uma coluna de bancos dedicados abaixo (até 3 por linha).
+  const dedicated = (st.tenants || []).filter((t) => t.dedicated);
+  dedicated.forEach((t, i) => {
+    const col = i % 3;
+    nodes.push({
+      id: 'db-' + t.establishmentId, kind: 'db', title: t.name, sub: (t.dbName || 'dedicado') + ' · ' + t.appointments + ' agend.',
+      x: 300 + col * 220, y: 430 + Math.floor(i / 3) * 100, tenantId: t.establishmentId,
+      lines: ['Banco exclusivo desta loja (isolamento físico).', 'Nome no servidor: ' + (t.dbName || '?') + '.', 'Agendamentos: ' + t.appointments + '.']
+    });
+    edges.push({ from: 'app', fa: 'B', to: 'db-' + t.establishmentId, ta: 'T', label: 'dedicado' });
+  });
+  return { nodes, edges, height: dedicated.length ? 430 + Math.ceil(dedicated.length / 3) * 100 + 20 : 400 };
+}
+
+function maintFlowAnchor(n, side) {
+  if (side === 'L') return [n.x, n.y + MAINT_FLOW_H / 2];
+  if (side === 'R') return [n.x + MAINT_FLOW_W, n.y + MAINT_FLOW_H / 2];
+  if (side === 'T') return [n.x + MAINT_FLOW_W / 2, n.y];
+  return [n.x + MAINT_FLOW_W / 2, n.y + MAINT_FLOW_H];
+}
+
+function maintFlowEdgeD(byId, e) {
+  const a = byId[e.from];
+  const b = byId[e.to];
+  const p1 = maintFlowAnchor(a, e.fa);
+  const p2 = maintFlowAnchor(b, e.ta);
+  const horiz = (e.fa === 'L' || e.fa === 'R') && (e.ta === 'L' || e.ta === 'R');
+  const dx = horiz ? Math.max(30, Math.abs(p2[0] - p1[0]) / 2) : 0;
+  const dy = horiz ? 0 : Math.max(30, Math.abs(p2[1] - p1[1]) / 2);
+  return `M ${p1[0]} ${p1[1]} C ${p1[0] + dx} ${p1[1] + dy}, ${p2[0] - dx} ${p2[1] - dy}, ${p2[0]} ${p2[1]}`;
+}
+
+function maintFlowNodeSvg(n) {
+  const color = maintFlowColor(n.kind);
+  return `<g class="mnode" data-node="${n.id}" transform="translate(${n.x},${n.y})" style="cursor:grab;user-select:none;-webkit-user-select:none;">
+    <rect width="${MAINT_FLOW_W}" height="${MAINT_FLOW_H}" rx="12" style="fill:var(--card-bg);stroke:var(--border);stroke-width:1.5;filter:drop-shadow(0 2px 4px rgba(0,0,0,.15));"></rect>
+    <rect x="0" y="10" width="5" height="${MAINT_FLOW_H - 20}" rx="2.5" style="fill:${color};"></rect>
+    <circle cx="20" cy="22" r="5" style="fill:${color};"></circle>
+    <text x="34" y="27" font-size="13" font-weight="700" style="fill:var(--text);">${escapeHtml(n.title)}</text>
+    <text x="20" y="48" font-size="11" style="fill:var(--text-muted);">${escapeHtml(n.sub)}</text>
+  </g>`;
+}
+
+function maintFlowEdgeSvg(byId, e, i) {
+  const a = byId[e.from];
+  const b = byId[e.to];
+  const p1 = maintFlowAnchor(a, e.fa);
+  const p2 = maintFlowAnchor(b, e.ta);
+  const mx = (p1[0] + p2[0]) / 2;
+  const my = (p1[1] + p2[1]) / 2;
+  return `<g>
+    <path id="medge-${i}" d="${maintFlowEdgeD(byId, e)}" fill="none" style="stroke:var(--text-muted);stroke-width:1.8;" marker-end="url(#marrow)"></path>
+    <text x="${mx}" y="${my - 6}" font-size="11" text-anchor="middle" style="fill:var(--text-muted);paint-order:stroke;stroke:var(--card-bg);stroke-width:4px;">${escapeHtml(e.label)}</text>
+  </g>`;
+}
+
+function maintFlowRender(svg, model) {
+  const byId = {};
+  model.nodes.forEach((n) => { byId[n.id] = n; });
+  svg.setAttribute('viewBox', `0 0 1040 ${model.height}`);
+  svg.innerHTML = `<defs>
+      <marker id="marrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0L10 5L0 10z" style="fill:var(--text-muted);"></path>
+      </marker>
+    </defs>`
+    + model.edges.map((e, i) => maintFlowEdgeSvg(byId, e, i)).join('')
+    + model.nodes.map(maintFlowNodeSvg).join('');
+  return byId;
+}
+
+function maintFlowDetailHtml(n, st) {
+  const rows = (n.lines || []).map((l) => `<div>· ${escapeHtml(l)}</div>`).join('');
+  let actions = '';
+  if (n.id === 'backups') {
+    actions = `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary" data-flow="backup-now">Criar backup agora</button>
+      <a href="#/backups" class="btn btn-secondary" style="text-decoration:none;">Abrir backups</a></div>`;
+  } else if (n.id === 'app') {
+    actions = `<div style="margin-top:10px;"><button class="btn btn-secondary" data-flow="restart">Reiniciar serviço</button></div>`;
+  } else if (n.tenantId) {
+    actions = `<div style="margin-top:10px;"><button class="btn btn-secondary" data-flow="moveback" data-id="${n.tenantId}">Voltar ao compartilhado</button></div>`;
+  } else if (n.id === 'pg') {
+    const shared = (st.tenants || []).filter((t) => !t.dedicated);
+    actions = shared.length
+      ? `<div style="margin-top:10px;" class="cell-muted">Para isolar uma loja, use a tabela "Bancos das lojas" abaixo.</div>`
+      : `<div style="margin-top:10px;" class="cell-muted">Nenhuma loja no compartilhado.</div>`;
+  }
+  return `<strong>${escapeHtml(n.title)}</strong> <span class="cell-muted">— ${escapeHtml(n.sub)}</span><div class="cell-muted" style="margin-top:6px;">${rows}</div>${actions}`;
+}
+
+// Liga arrastar, clique-detalhe e zoom no svg do workflow.
+function maintFlowBind(svg, detailEl, model, st) {
+  let byId = maintFlowRender(svg, model);
+  let drag = null;
+
+  const pt = (evt) => {
+    const p = svg.createSVGPoint();
+    p.x = evt.clientX;
+    p.y = evt.clientY;
+    return p.matrixTransform(svg.getScreenCTM().inverse());
+  };
+
+  svg.addEventListener('pointerdown', (evt) => {
+    const g = evt.target.closest('.mnode');
+    if (!g) return;
+    const n = byId[g.dataset.node];
+    if (!n) return;
+    const m = pt(evt);
+    drag = { n, g, dx: m.x - n.x, dy: m.y - n.y, moved: false, sx: evt.clientX, sy: evt.clientY };
+    svg.style.cursor = 'grabbing';
+    svg.setPointerCapture(evt.pointerId);
+  });
+  svg.addEventListener('pointermove', (evt) => {
+    if (!drag) return;
+    if (Math.hypot(evt.clientX - drag.sx, evt.clientY - drag.sy) > 5) drag.moved = true;
+    if (!drag.moved) return;
+    const m = pt(evt);
+    drag.n.x = Math.max(0, Math.min(1040 - MAINT_FLOW_W, m.x - drag.dx));
+    drag.n.y = Math.max(0, m.y - drag.dy);
+    drag.g.setAttribute('transform', `translate(${drag.n.x},${drag.n.y})`);
+    model.edges.forEach((e, i) => {
+      const path = svg.querySelector('#medge-' + i);
+      if (path) path.setAttribute('d', maintFlowEdgeD(byId, e));
+    });
+  });
+  const endDrag = (evt) => {
+    if (!drag) return;
+    const wasClick = !drag.moved;
+    const n = drag.n;
+    drag = null;
+    svg.style.cursor = 'grab';
+    if (wasClick) {
+      detailEl.innerHTML = maintFlowDetailHtml(n, st);
+      maintFlowBindDetail(detailEl);
+    }
+  };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', () => { drag = null; svg.style.cursor = 'grab'; });
+
+  // Zoom (0.6x–1.6x) em torno do centro.
+  let zoom = 1;
+  const applyZoom = () => {
+    const w = 1040 / zoom;
+    const h = model.height / zoom;
+    svg.setAttribute('viewBox', `${(1040 - w) / 2} ${(model.height - h) / 2} ${w} ${h}`);
+  };
+  document.getElementById('flow-zoom-in').addEventListener('click', () => { zoom = Math.min(1.6, +(zoom + 0.2).toFixed(2)); applyZoom(); });
+  document.getElementById('flow-zoom-out').addEventListener('click', () => { zoom = Math.max(0.6, +(zoom - 0.2).toFixed(2)); applyZoom(); });
+  document.getElementById('flow-zoom-reset').addEventListener('click', () => { zoom = 1; applyZoom(); });
+}
+
+// Botoes dentro do painel de detalhes do no clicado.
+function maintFlowBindDetail(detailEl) {
+  const backupBtn = detailEl.querySelector('[data-flow="backup-now"]');
+  if (backupBtn) backupBtn.addEventListener('click', async () => {
+    backupBtn.disabled = true;
+    try {
+      await api('POST', '/api/backups');
+      toast('Backup criado com sucesso!');
+      renderManutencaoPage();
+    } catch (err) { toast(err.message, true); backupBtn.disabled = false; }
+  });
+  const restartBtn = detailEl.querySelector('[data-flow="restart"]');
+  if (restartBtn) restartBtn.addEventListener('click', async () => {
+    if (!window.confirm('Reiniciar o servidor agora?\n\nNa VPS ele sobe sozinho. No Windows, reabra o run-server.bat.')) return;
+    restartBtn.disabled = true;
+    try {
+      const r = await api('POST', '/api/maintenance/restart', {});
+      toast(r.message);
+    } catch (err) { toast('Servidor reiniciando... aguarde e recarregue a página.'); }
+  });
+  const backBtn = detailEl.querySelector('[data-flow="moveback"]');
+  if (backBtn) backBtn.addEventListener('click', async () => {
+    if (!window.confirm('Voltar esta loja ao banco COMPARTILHADO?\n\nContinuar?')) return;
+    backBtn.disabled = true;
+    try {
+      await api('POST', `/api/tenant-databases/${backBtn.dataset.id}/move-back`, {});
+      toast('Loja no banco compartilhado.');
+      renderManutencaoPage();
+    } catch (err) { toast(err.message, true); backBtn.disabled = false; }
+  });
+}
+
 async function renderManutencaoPage() {
   if (!isGlobalAdmin(currentUser)) {
     return renderSelector();
@@ -3623,13 +3837,17 @@ async function renderManutencaoPage() {
 
     <div class="card settings-card">
       <h3>${dot(true, 'Servidor respondendo')} Saúde do sistema</h3>
-      <p class="cell-muted">Se esta página abriu, o app está no ar. Abaixo, o caminho que um acesso faz até seus dados:</p>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;">
-        ${['Internet', 'Nginx (VPS)', 'App Node', 'PostgreSQL'].map((n) => `
-          <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--border, #e5e7eb);border-radius:10px;">
-            ${dot(true, n + ' ok')} ${n}
-          </span>`).join('<span aria-hidden="true">→</span>')}
+      <p class="cell-muted">Se esta página abriu, o app está no ar. Abaixo, o mapa vivo do sistema — <strong>arraste os nós, use o zoom e clique em cada um</strong> para ver detalhes e ações:</p>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;">
+        <button class="btn btn-secondary" id="flow-zoom-out" title="Afastar">−</button>
+        <button class="btn btn-secondary" id="flow-zoom-in" title="Aproximar">+</button>
+        <button class="btn btn-secondary" id="flow-zoom-reset" title="Voltar ao tamanho normal">1:1</button>
+        <span class="cell-muted">Arraste os nós para organizar · clique num nó para inspecionar</span>
       </div>
+      <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+        <svg id="maint-flow" viewBox="0 0 1040 560" style="width:100%;height:auto;display:block;background:var(--card-bg);cursor:grab;"></svg>
+      </div>
+      <div id="maint-flow-detail" class="hint-box" style="margin-top:10px;">Clique em um nó do mapa para ver detalhes e ações.</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:8px;">
         <div><div class="cell-muted">No ar há</div><strong>${escapeHtml(formatUptime(st.uptimeSeconds))}</strong></div>
         <div><div class="cell-muted">Versão</div><strong>v${escapeHtml(st.version)}${st.gitCommit ? ' · ' + escapeHtml(st.gitCommit) : ''}</strong></div>
@@ -3717,6 +3935,15 @@ async function renderManutencaoPage() {
       <button class="btn btn-secondary" id="maint-restart">Reiniciar agora</button>
     </div>
   `;
+
+  // Mapa vivo estilo n8n a partir do status real.
+  try {
+    const flowSvg = document.getElementById('maint-flow');
+    const flowDetail = document.getElementById('maint-flow-detail');
+    if (flowSvg && flowDetail) {
+      maintFlowBind(flowSvg, flowDetail, maintFlowModel(st), st);
+    }
+  } catch (err) { /* mapa e decorativo: cards continuam funcionando */ }
 
   document.getElementById('maint-refresh').addEventListener('click', renderManutencaoPage);
   document.getElementById('maint-copy-vps').addEventListener('click', (e) => copyCmd(vpsCmds, e.currentTarget));
