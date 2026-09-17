@@ -14,16 +14,23 @@
 // Compatibilidade mantida com a API anterior do store (arquivo):
 //   readDB, writeDB, writeDBSync, reloadFromDisk, all, findById, query,
 //   insert, update, remove, DATA_DIR, DB_FILE
-// Novidades: init(), exportSnapshot(), COLLECTIONS.
+// Novidades: init(), exportSnapshot(), COLLECTIONS, helpers com escopo de
+// tenant (queryScoped/findByIdScoped), flush(), close().
+//
+// Isolamento em profundidade: alem do filtro por establishmentId nas rotas,
+// toda escrita no PostgreSQL roda dentro de uma transacao com o contexto de
+// RLS configurado (app.establishment_id / app.admin_context). Ver rls.js.
 
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { getContext, runAsAdmin } = require('./tenant-context');
+const { ensureRls, applyContext } = require('./rls');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-const COLLECTIONS = ['users', 'establishments', 'employees', 'clients', 'services', 'appointments', 'cashClosings'];
+const COLLECTIONS = ['users', 'establishments', 'employees', 'clients', 'services', 'appointments', 'cashClosings', 'coupons'];
 
 const EMPTY_DB = COLLECTIONS.reduce((acc, c) => { acc[c] = []; return acc; }, {});
 
@@ -129,6 +136,25 @@ function query(collection, predicate) {
   return all(collection).filter(predicate);
 }
 
+// ---- leitura com escopo de tenant ----
+//
+// Preferir estes helpers nas rotas de dados de loja: tornam o filtro por
+// establishmentId obrigatorio e centralizado (auditoria mais simples).
+
+function queryScoped(collection, establishmentId, predicate) {
+  return query(collection, (row) =>
+    row.establishmentId === establishmentId && (!predicate || predicate(row)));
+}
+
+function allScoped(collection, establishmentId) {
+  return queryScoped(collection, establishmentId);
+}
+
+function findByIdScoped(collection, id, establishmentId) {
+  const row = findById(collection, id);
+  return row && row.establishmentId === establishmentId ? row : null;
+}
+
 // Snapshot raso das colecoes (arrays copiados, objetos compartilhados) —
 // mesmo comportamento do readDB anterior, usado pelo seed e backups.
 function readDB() {
@@ -139,6 +165,25 @@ function readDB() {
 
 // ---- persistencia ----
 
+// Abre uma transacao, aplica o contexto de RLS e executa fn(client).
+// O contexto e capturado no momento da chamada (nao no momento da execucao da
+// fila), para que a escrita assincrona use o tenant da requisicao que a criou.
+async function runInContext(context, fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await applyContext(client, context);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) { /* ignore */ }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 function normalizeDb(db) {
   const next = {};
   for (const c of COLLECTIONS) next[c] = Array.isArray(db[c]) ? db[c] : [];
@@ -148,9 +193,7 @@ function normalizeDb(db) {
 // Substitui TODO o conteudo do banco pelo snapshot informado.
 async function writeDB(db) {
   return enqueue(async () => {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+    await runInContext({ admin: true }, async (client) => {
       for (const c of COLLECTIONS) {
         const rows = Array.isArray(db[c]) ? db[c] : [];
         await client.query(`DELETE FROM ${c}`);
@@ -162,13 +205,7 @@ async function writeDB(db) {
           );
         }
       }
-      await client.query('COMMIT');
-    } catch (err) {
-      try { await client.query('ROLLBACK'); } catch (e) { /* ignore */ }
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
     cache = normalizeDb(db);
   });
 }
@@ -183,13 +220,14 @@ function insert(collection, row) {
   if (!cache[collection]) cache[collection] = [];
   if (!row.id) row = { ...row, id: uuid() };
   cache[collection].push(sanitizeRow(row));
-  queueWrite(async () => {
-    await pool.query(
+  const context = getContext();
+  queueWrite(() => runInContext(context, (client) =>
+    client.query(
       `INSERT INTO ${collection} (id, data) VALUES ($1, $2::jsonb)
        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
       [String(row.id), JSON.stringify(sanitizeRow(row))]
-    );
-  });
+    )
+  ));
   return row;
 }
 
@@ -200,13 +238,14 @@ function update(collection, id, patch) {
   if (idx === -1) return null;
   list[idx] = { ...list[idx], ...sanitizeRow(patch), id: list[idx].id };
   const merged = list[idx];
-  queueWrite(async () => {
-    await pool.query(
+  const context = getContext();
+  queueWrite(() => runInContext(context, (client) =>
+    client.query(
       `INSERT INTO ${collection} (id, data) VALUES ($1, $2::jsonb)
        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
       [String(id), JSON.stringify(merged)]
-    );
-  });
+    )
+  ));
   return merged;
 }
 
@@ -216,20 +255,34 @@ function remove(collection, id) {
   const idx = list.findIndex((row) => row.id === id);
   if (idx === -1) return false;
   list.splice(idx, 1);
-  queueWrite(async () => {
-    await pool.query(`DELETE FROM ${collection} WHERE id = $1`, [String(id)]);
-  });
+  const context = getContext();
+  queueWrite(() => runInContext(context, (client) =>
+    client.query(`DELETE FROM ${collection} WHERE id = $1`, [String(id)])
+  ));
   return true;
+}
+
+// Drena a fila de escritas pendentes (usado por testes e desligamento).
+function flush() {
+  return enqueue(() => {});
 }
 
 // ---- carga / migracao ----
 
 async function loadAllIntoCache() {
-  const next = {};
-  for (const c of COLLECTIONS) {
-    const res = await pool.query(`SELECT data FROM ${c}`);
-    next[c] = res.rows.map((r) => r.data);
-  }
+  // Otimizacao: carrega TODAS as collections em uma unica ida ao banco
+  // (jsonb_agg) em vez de um SELECT por tabela — roda a cada ciclo de
+  // sincronizacao, entao vale reduzir round-trips.
+  const next = await runInContext({ admin: true }, async (client) => {
+    const parts = COLLECTIONS.map(
+      (c) => `'${c}', COALESCE((SELECT jsonb_agg(data) FROM ${c}), '[]'::jsonb)`
+    ).join(', ');
+    const res = await client.query(`SELECT jsonb_build_object(${parts}) AS snapshot`);
+    const snapshot = res.rows[0].snapshot || {};
+    const result = {};
+    for (const c of COLLECTIONS) result[c] = Array.isArray(snapshot[c]) ? snapshot[c] : [];
+    return result;
+  });
   cache = next;
 }
 
@@ -294,7 +347,8 @@ function init() {
     if (process.env.STORE_PG_SYNC !== 'false') {
       reloadTimer = setInterval(() => {
         if (pendingWrites === 0) {
-          loadAllIntoCache().catch(() => {});
+          // Leitura de manutencao: roda com bypass de RLS (contexto de sistema).
+          runAsAdmin(() => loadAllIntoCache()).catch(() => {});
         }
       }, 3000);
       if (reloadTimer.unref) reloadTimer.unref();
@@ -316,6 +370,23 @@ async function ensureSchema(client) {
     );
     await client.query(`CREATE INDEX IF NOT EXISTS idx_${c}_data ON ${c} USING GIN (data)`);
   }
+  // Camada extra de isolamento no banco (ver rls.js).
+  await ensureRls(client);
+}
+
+// Encerra o pool (testes/desligamento gracioso).
+async function close() {
+  if (reloadTimer) clearInterval(reloadTimer);
+  reloadTimer = null;
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
+}
+
+// Acesso direto ao pool (diagnostico e testes de RLS).
+function getPool() {
+  return pool;
 }
 
 module.exports = {
@@ -327,10 +398,16 @@ module.exports = {
   all,
   findById,
   query,
+  allScoped,
+  queryScoped,
+  findByIdScoped,
   insert,
   update,
   remove,
+  flush,
   init,
+  close,
+  getPool,
   ensureSchema,
   COLLECTIONS,
   DATA_DIR,

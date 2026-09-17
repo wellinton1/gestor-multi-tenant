@@ -20,7 +20,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { Client } = require('pg');
-const { COLLECTIONS } = require('../data/store');
+const { ensureSchema } = require('../data/store');
 
 const IS_WINDOWS = process.platform === 'win32';
 const PROJECT_ROOT = path.join(__dirname, '..', '..', '..');
@@ -142,20 +142,10 @@ async function ensurePostgres() {
     }
   }
 
-  // 3. Schema idempotente (tabelas + indices)
+  // 3. Schema idempotente (tabelas + indices + Row-Level Security)
   const client = await tryConnect(cfg, cfg.database, 5000);
   try {
-    for (const c of COLLECTIONS) {
-      await client.query(
-        `CREATE TABLE IF NOT EXISTS ${c} (
-          id TEXT PRIMARY KEY,
-          data JSONB NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )`
-      );
-      await client.query(`CREATE INDEX IF NOT EXISTS idx_${c}_data ON ${c} USING GIN (data)`);
-    }
+    await ensureSchema(client);
   } finally {
     await client.end();
   }

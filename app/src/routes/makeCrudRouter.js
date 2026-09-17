@@ -13,7 +13,7 @@ function makeCrudRouter(collection, fields, defaults) {
   router.get('/', (req, res, next) => {
     try {
       const list = store
-        .query(collection, (row) => row.establishmentId === req.session.establishmentId)
+        .allScoped(collection, req.session.establishmentId)
         .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       res.json(list);
     } catch (err) {
@@ -38,8 +38,8 @@ function makeCrudRouter(collection, fields, defaults) {
 
   router.put('/:id', (req, res, next) => {
     try {
-      const existing = store.findById(collection, req.params.id);
-      if (!existing || existing.establishmentId !== req.session.establishmentId) {
+      const existing = store.findByIdScoped(collection, req.params.id, req.session.establishmentId);
+      if (!existing) {
         return res.status(404).json({ error: 'Registro nao encontrado.' });
       }
       const body = req.body || {};
@@ -56,8 +56,8 @@ function makeCrudRouter(collection, fields, defaults) {
 
   router.delete('/:id', (req, res, next) => {
     try {
-      const existing = store.findById(collection, req.params.id);
-      if (!existing || existing.establishmentId !== req.session.establishmentId) {
+      const existing = store.findByIdScoped(collection, req.params.id, req.session.establishmentId);
+      if (!existing) {
         return res.status(404).json({ error: 'Registro nao encontrado.' });
       }
       store.remove(collection, req.params.id);

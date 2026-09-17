@@ -9,7 +9,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "setup:pg": "node scripts/pg-setup.js"
+    "setup:pg": "node scripts/pg-setup.js",
+    "test": "node --test test/port.test.js test/rls.test.js test/tenant-isolation.test.js",
+    "test:isolation": "node --test test/rls.test.js test/tenant-isolation.test.js"
   },
   "dependencies": {
     "adm-zip": "^0.6.0",

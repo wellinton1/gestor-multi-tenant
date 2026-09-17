@@ -1,12 +1,20 @@
 const express = require('express');
 const { v4: uuid } = require('uuid');
 const store = require('../data/store');
+const { runWithTenant } = require('../data/tenant-context');
 const { normalizeSelectedServices, buildServiceSummary } = require('../utils/booking');
 const { z } = require('zod');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
 const router = express.Router();
+
+// Portal e publico, mas toda operacao e em nome de UM estabelecimento (o da
+// URL). Propaga esse tenant para a camada de dados, para que as escritas
+// (agendamento, cliente novo, uso de cupom) carreguem o contexto de RLS.
+router.use('/:establishmentId', (req, res, next) => {
+  return runWithTenant(req.params.establishmentId, next);
+});
 
 // Validation schemas
 const availableTimesQuerySchema = z.object({
@@ -54,7 +62,7 @@ router.get('/:establishmentId', async (req, res) => {
         name: est.name
       });
     }
-    const services = store.query('services', (s) => s.establishmentId === est.id);
+    const services = store.allScoped('services', est.id);
     const hasPayment = !!(est.pixApiKey || est.abacatePayApiKey);
     res.json({
       id: est.id,
@@ -159,8 +167,7 @@ router.get('/:establishmentId/available-times', validate(availableTimesQuerySche
     }
 
     // Get existing appointments for this date
-    const appointments = store.query('appointments', (a) => {
-      if (a.establishmentId !== est.id) return false;
+    const appointments = store.queryScoped('appointments', est.id, (a) => {
       const apptDate = a.dateTime ? a.dateTime.substring(0, 10) : '';
       return apptDate === date && a.status !== 'Cancelado';
     });
@@ -215,17 +222,18 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
     }
 
     for (const item of services) {
-      const service = store.findById('services', item.id);
-      if (!service || service.establishmentId !== est.id) {
+      const service = store.findByIdScoped('services', item.id, est.id);
+      if (!service) {
         return res.status(400).json({ error: 'Servico invalido.' });
       }
       item.price = service.price;
       item.name = service.name;
     }
 
-    let client = store.query(
+    let client = store.queryScoped(
       'clients',
-      (c) => c.establishmentId === est.id && c.phone === clientPhone
+      est.id,
+      (c) => c.phone === clientPhone
     )[0];
     if (!client) {
       client = store.insert('clients', {
@@ -245,7 +253,7 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
     let discount = 0;
 
     if (couponCode) {
-      const coupon = store.query('coupons', (c) => c.establishmentId === est.id && c.code === String(couponCode).toUpperCase())[0];
+      const coupon = store.queryScoped('coupons', est.id, (c) => c.code === String(couponCode).toUpperCase())[0];
       if (coupon) {
         const now = new Date();
         if (coupon.status === 'active' &&

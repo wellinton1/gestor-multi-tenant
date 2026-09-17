@@ -9,8 +9,8 @@ router.use(requireLogin, requireEstablishment);
 const VALID_STATUSES = ['Pendente', 'Em Andamento', 'Concluido', 'Cancelado'];
 
 function decorate(appt, estId) {
-  const client = store.findById('clients', appt.clientId);
-  const employee = appt.employeeId ? store.findById('employees', appt.employeeId) : null;
+  const client = store.findByIdScoped('clients', appt.clientId, estId);
+  const employee = appt.employeeId ? store.findByIdScoped('employees', appt.employeeId, estId) : null;
   return {
     ...appt,
     clientName: client ? client.name : '(cliente removido)',
@@ -21,10 +21,11 @@ function decorate(appt, estId) {
 
 router.get('/', (req, res, next) => {
   try {
+    const estId = req.session.establishmentId;
     const list = store
-      .query('appointments', (row) => row.establishmentId === req.session.establishmentId)
+      .allScoped('appointments', estId)
       .sort((a, b) => (a.dateTime < b.dateTime ? 1 : -1))
-      .map((row) => decorate(row));
+      .map((row) => decorate(row, estId));
     res.json(list);
   } catch (err) {
     next(err);
@@ -55,14 +56,14 @@ router.post('/', (req, res, next) => {
     }
 
     if (finalClientId) {
-      const client = store.findById('clients', finalClientId);
-      if (!client || client.establishmentId !== estId) {
+      const client = store.findByIdScoped('clients', finalClientId, estId);
+      if (!client) {
         return res.status(400).json({ error: 'Cliente invalido.' });
       }
     }
     if (employeeId) {
-      const employee = store.findById('employees', employeeId);
-      if (!employee || employee.establishmentId !== estId) {
+      const employee = store.findByIdScoped('employees', employeeId, estId);
+      if (!employee) {
         return res.status(400).json({ error: 'Funcionario invalido.' });
       }
     }
@@ -70,8 +71,8 @@ router.post('/', (req, res, next) => {
     let serviceName = '';
     let computedTotal = Number(total) || 0;
     if (serviceId) {
-      const service = store.findById('services', serviceId);
-      if (!service || service.establishmentId !== estId) {
+      const service = store.findByIdScoped('services', serviceId, estId);
+      if (!service) {
         return res.status(400).json({ error: 'Servico invalido.' });
       }
       serviceName = service.name;
@@ -101,8 +102,9 @@ router.post('/', (req, res, next) => {
 
 router.put('/:id', (req, res, next) => {
   try {
-    const existing = store.findById('appointments', req.params.id);
-    if (!existing || existing.establishmentId !== req.session.establishmentId) {
+    const estId = req.session.establishmentId;
+    const existing = store.findByIdScoped('appointments', req.params.id, estId);
+    if (!existing) {
       return res.status(404).json({ error: 'Agendamento nao encontrado.' });
     }
     const body = req.body || {};
@@ -117,29 +119,29 @@ router.put('/:id', (req, res, next) => {
       patch.status = body.status;
     }
     if (body.clientId !== undefined) {
-      const client = store.findById('clients', body.clientId);
-      if (!client || client.establishmentId !== req.session.establishmentId) {
+      const client = store.findByIdScoped('clients', body.clientId, estId);
+      if (!client) {
         return res.status(400).json({ error: 'Cliente invalido.' });
       }
       patch.clientId = body.clientId;
     }
     if (body.employeeId !== undefined) {
-      const employee = store.findById('employees', body.employeeId);
-      if (!employee || employee.establishmentId !== req.session.establishmentId) {
+      const employee = store.findByIdScoped('employees', body.employeeId, estId);
+      if (!employee) {
         return res.status(400).json({ error: 'Funcionario invalido.' });
       }
       patch.employeeId = body.employeeId;
     }
     if (body.serviceId) {
-      const service = store.findById('services', body.serviceId);
-      if (!service || service.establishmentId !== req.session.establishmentId) {
+      const service = store.findByIdScoped('services', body.serviceId, estId);
+      if (!service) {
         return res.status(400).json({ error: 'Servico invalido.' });
       }
       patch.serviceId = body.serviceId;
       patch.serviceName = service.name;
     }
     const updated = store.update('appointments', req.params.id, patch);
-    res.json(decorate(updated));
+    res.json(decorate(updated, estId));
   } catch (err) {
     next(err);
   }
@@ -147,8 +149,8 @@ router.put('/:id', (req, res, next) => {
 
 router.delete('/:id', (req, res, next) => {
   try {
-    const existing = store.findById('appointments', req.params.id);
-    if (!existing || existing.establishmentId !== req.session.establishmentId) {
+    const existing = store.findByIdScoped('appointments', req.params.id, req.session.establishmentId);
+    if (!existing) {
       return res.status(404).json({ error: 'Agendamento nao encontrado.' });
     }
     store.remove('appointments', req.params.id);

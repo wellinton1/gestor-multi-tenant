@@ -1,6 +1,7 @@
 const express = require('express');
 const { v4: uuid } = require('uuid');
 const store = require('../data/store');
+const { runWithTenant } = require('../data/tenant-context');
 const { requireLogin } = require('../middleware/auth');
 const { resolveAllowedIds, isGlobalAdmin, hasAccessToEstablishment } = require('../utils/access');
 
@@ -183,7 +184,7 @@ router.put('/:id', (req, res, next) => {
     const isGlobalAdminUser = isGlobalAdmin(user);
     const newPlan = (isGlobalAdminUser && plan && ['free', 'pro'].includes(plan)) ? plan : (est.plan || 'free');
 
-    const updated = store.update('establishments', req.params.id, {
+    const updated = runWithTenant(est.id, () => store.update('establishments', req.params.id, {
       name: name !== undefined ? String(name).trim() : est.name,
       phone: phone !== undefined ? String(phone).trim() : est.phone,
       address: address !== undefined ? String(address).trim() : est.address,
@@ -192,7 +193,7 @@ router.put('/:id', (req, res, next) => {
       businessHours: businessHours !== undefined ? businessHours : est.businessHours,
       accentOverride: accentOverride !== undefined ? normalizeAccentOverride(accentOverride) : est.accentOverride,
       plan: newPlan
-    });
+    }));
     res.json(updated);
   } catch (err) {
     next(err);

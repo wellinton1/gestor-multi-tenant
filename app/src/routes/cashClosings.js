@@ -17,7 +17,7 @@ function decorate(closing) {
 router.get('/', (req, res, next) => {
   try {
     const list = store
-      .query('cashClosings', (row) => row.establishmentId === req.session.establishmentId)
+      .allScoped('cashClosings', req.session.establishmentId)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     res.json(list);
   } catch (err) {
@@ -29,7 +29,7 @@ router.get('/', (req, res, next) => {
 router.get('/completed-orders-total', (req, res, next) => {
   try {
     const estId = req.session.establishmentId;
-    const appointments = store.query('appointments', (a) => a.establishmentId === estId && a.status === 'Concluido');
+    const appointments = store.queryScoped('appointments', estId, (a) => a.status === 'Concluido');
     const total = appointments.reduce((sum, a) => sum + (Number(a.total) || 0), 0);
     res.json({ total, count: appointments.length });
   } catch (err) {
@@ -64,8 +64,8 @@ router.post('/', (req, res, next) => {
 
 router.delete('/:id', (req, res, next) => {
   try {
-    const existing = store.findById('cashClosings', req.params.id);
-    if (!existing || existing.establishmentId !== req.session.establishmentId) {
+    const existing = store.findByIdScoped('cashClosings', req.params.id, req.session.establishmentId);
+    if (!existing) {
       return res.status(404).json({ error: 'Registro nao encontrado.' });
     }
     const { password } = req.body || {};

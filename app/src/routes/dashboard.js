@@ -8,9 +8,9 @@ router.use(requireLogin, requireEstablishment);
 router.get('/', (req, res, next) => {
   try {
     const estId = req.session.establishmentId;
-    const appointments = store.query('appointments', (a) => a.establishmentId === estId);
-    const clients = store.query('clients', (c) => c.establishmentId === estId);
-    const employees = store.query('employees', (e) => e.establishmentId === estId);
+    const appointments = store.allScoped('appointments', estId);
+    const clients = store.allScoped('clients', estId);
+    const employees = store.allScoped('employees', estId);
 
     const inProgress = appointments.filter((a) => a.status === 'Em Andamento').length;
     const revenue = appointments
@@ -22,7 +22,7 @@ router.get('/', (req, res, next) => {
       .sort((a, b) => (a.dateTime < b.dateTime ? 1 : -1))
       .slice(0, 5)
       .map((a) => {
-        const client = store.findById('clients', a.clientId);
+        const client = store.findByIdScoped('clients', a.clientId, estId);
         return {
           id: a.id,
           clientName: client ? client.name : '(cliente removido)',

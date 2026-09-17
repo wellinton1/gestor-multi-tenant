@@ -7,6 +7,9 @@ const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS) || 12;
 function buildInitialDb() {
   const db = { ...store.readDB() };
   const now = new Date().toISOString();
+  // Otimizacao: o seed so persiste no PostgreSQL se efetivamente criar ou
+  // alterar algo. Antes ele reescrevia TODAS as tabelas a cada boot.
+  let changed = false;
 
   // Admin user (opcional via .env). Se ADMIN_PASSWORD nao estiver definido,
   // nenhum admin e criado aqui - o usuario fara o setup wizard na primeira
@@ -38,15 +41,18 @@ function buildInitialDb() {
         passwordChangedAt: new Date().toISOString(),
         createdAt: now
       });
+      changed = true;
       console.log('Usuario administrador criado com sucesso.');
     } else if (!existing.role || existing.role !== 'admin') {
       existing.role = 'admin';
+      changed = true;
       console.log('Role atualizado para admin no usuario existente.');
     }
   }
 
   // Demo data (only if explicitly enabled and empty)
   if (process.env.SEED_DEMO_DATA === 'true' && db.establishments.length === 0) {
+    changed = true;
     const estId = uuid();
     const estId2 = uuid();
     db.establishments.push(
@@ -99,7 +105,7 @@ function buildInitialDb() {
     console.log('Dados de demonstracao criados (estabelecimentos)');
   }
 
-  return db;
+  return { db, changed };
 }
 
 function isProduction() {
@@ -107,8 +113,10 @@ function isProduction() {
 }
 
 async function runSeed() {
-  const db = buildInitialDb();
-  await store.writeDBSync(db);
+  const { db, changed } = buildInitialDb();
+  if (changed) {
+    await store.writeDBSync(db);
+  }
 }
 
 module.exports = { runSeed };

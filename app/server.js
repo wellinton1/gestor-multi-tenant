@@ -194,6 +194,10 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Contexto de tenant (AsyncLocalStorage): propaga o estabelecimento da sessao
+// para a camada de dados, que configura o RLS do PostgreSQL nas escritas.
+app.use(require('./src/data/tenant-context').tenantContextMiddleware);
+
 // ===== CSRF Protection (Double Submit Cookie Pattern) =====
 // Gera token CSRF e armazena em cookie acessivel via JS
 app.use((req, res, next) => {

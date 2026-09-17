@@ -72,7 +72,7 @@ function calculateDiscount(coupon, subtotal) {
 router.get('/', async (req, res, next) => {
   try {
     const list = store
-      .query('coupons', (c) => c.establishmentId === req.session.establishmentId)
+      .allScoped('coupons', req.session.establishmentId)
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     res.json(list);
   } catch (err) {
@@ -86,7 +86,7 @@ router.post('/', async (req, res, next) => {
     if (validation.error) return res.status(400).json({ error: validation.error });
 
     const data = validation.data;
-    const existing = store.query('coupons', (c) => c.establishmentId === req.session.establishmentId && c.code === data.code.toUpperCase())[0];
+    const existing = store.queryScoped('coupons', req.session.establishmentId, (c) => c.code === data.code.toUpperCase())[0];
     if (existing) return res.status(400).json({ error: 'Código de cupom já existe' });
 
     const coupon = store.insert('coupons', {
@@ -113,8 +113,8 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const existing = store.findById('coupons', req.params.id);
-    if (!existing || existing.establishmentId !== req.session.establishmentId) {
+    const existing = store.findByIdScoped('coupons', req.params.id, req.session.establishmentId);
+    if (!existing) {
       return res.status(404).json({ error: 'Cupom não encontrado' });
     }
 
@@ -123,7 +123,7 @@ router.put('/:id', async (req, res, next) => {
 
     const data = validation.data;
     if (data.code.toUpperCase() !== existing.code) {
-      const dup = store.query('coupons', (c) => c.establishmentId === req.session.establishmentId && c.code === data.code.toUpperCase())[0];
+      const dup = store.queryScoped('coupons', req.session.establishmentId, (c) => c.code === data.code.toUpperCase())[0];
       if (dup) return res.status(400).json({ error: 'Código de cupom já existe' });
     }
 
@@ -147,8 +147,8 @@ router.put('/:id', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    const existing = store.findById('coupons', req.params.id);
-    if (!existing || existing.establishmentId !== req.session.establishmentId) {
+    const existing = store.findByIdScoped('coupons', req.params.id, req.session.establishmentId);
+    if (!existing) {
       return res.status(404).json({ error: 'Cupom não encontrado' });
     }
     store.remove('coupons', req.params.id);
@@ -163,7 +163,7 @@ router.post('/validate', async (req, res, next) => {
     const { code, serviceIds, subtotal } = req.body || {};
     if (!code) return res.status(400).json({ error: 'Código do cupom é obrigatório' });
 
-    const coupon = store.query('coupons', (c) => c.establishmentId === req.session.establishmentId && c.code === String(code).toUpperCase())[0];
+    const coupon = store.queryScoped('coupons', req.session.establishmentId, (c) => c.code === String(code).toUpperCase())[0];
     if (!coupon) return res.status(404).json({ valid: false, error: 'Cupom não encontrado' });
 
     const validation = isCouponValid(coupon, req.session.establishmentId, serviceIds || [], Number(subtotal) || 0);
