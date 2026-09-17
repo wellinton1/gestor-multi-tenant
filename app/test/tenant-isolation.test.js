@@ -93,8 +93,8 @@ test.before(async () => {
     store.insert('establishments', { id: ids.tenantA, name: 'Isolamento A', niche: 'Outro', createdAt: now });
     store.insert('establishments', { id: ids.tenantB, name: 'Isolamento B', niche: 'Outro', createdAt: now });
 
-    store.insert('users', { id: ids.userA, name: 'Operador A', email: `iso-a-${ids.userA}@teste.com`.toLowerCase(), passwordHash, role: 'operator', allowedEstablishmentIds: [ids.tenantA], createdAt: now });
-    store.insert('users', { id: ids.userB, name: 'Operador B', email: `iso-b-${ids.userB}@teste.com`.toLowerCase(), passwordHash, role: 'operator', allowedEstablishmentIds: [ids.tenantB], createdAt: now });
+    store.insert('users', { id: ids.userA, name: 'Operador A', email: `iso-a-${ids.userA}@teste.com`.toLowerCase(), passwordHash, role: 'operator', allowedEstablishmentIds: [ids.tenantA], createdAt: now, passwordChangedAt: now });
+    store.insert('users', { id: ids.userB, name: 'Operador B', email: `iso-b-${ids.userB}@teste.com`.toLowerCase(), passwordHash, role: 'operator', allowedEstablishmentIds: [ids.tenantB], createdAt: now, passwordChangedAt: now });
     store.insert('clients', { id: ids.clientA, establishmentId: ids.tenantA, name: 'Cliente A', phone: '1111', createdAt: now });
     store.insert('clients', { id: ids.clientB, establishmentId: ids.tenantB, name: 'Cliente B', phone: '2222', createdAt: now });
 

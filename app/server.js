@@ -41,6 +41,7 @@ const paymentsRoutes = require('./src/routes/payments');
 const backupsRoutes = require('./src/routes/backups');
 const couponsRoutes = require('./src/routes/coupons');
 const tenantDatabasesRoutes = require('./src/routes/tenantDatabases');
+const maintenanceRoutes = require('./src/routes/maintenance');
 const { startBackupScheduler } = require('./src/utils/backup');
 
 const app = express();
@@ -282,6 +283,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/backups', backupsRoutes);
 app.use('/api/coupons', couponsRoutes);
 app.use('/api/tenant-databases', tenantDatabasesRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 
 // Static frontend com cache-control
 app.use(express.static(path.join(__dirname, 'public'), {

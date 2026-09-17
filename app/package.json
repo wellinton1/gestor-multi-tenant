@@ -10,8 +10,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "setup:pg": "node scripts/pg-setup.js",
-    "test": "node --test test/port.test.js test/rls.test.js test/tenant-isolation.test.js test/tenant-databases.test.js test/tenant-auto-provision.test.js",
-    "test:isolation": "node --test test/rls.test.js test/tenant-isolation.test.js test/tenant-databases.test.js test/tenant-auto-provision.test.js",
+    "test": "node --test test/port.test.js test/rls.test.js test/tenant-isolation.test.js test/tenant-databases.test.js test/tenant-auto-provision.test.js test/maintenance.test.js",
+    "test:isolation": "node --test test/rls.test.js test/tenant-isolation.test.js test/tenant-databases.test.js test/tenant-auto-provision.test.js test/maintenance.test.js",
     "migrate:tenant": "node scripts/migrate-tenant-db.js"
   },
   "dependencies": {

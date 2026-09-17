@@ -401,7 +401,8 @@ function renderRouteWithoutEstablishment() {
   const globalPages = {
     '#/backups': renderBackupsPage,
     '#/senhas': renderSenhasPage,
-    '#/seguranca': renderSegurancaPage
+    '#/seguranca': renderSegurancaPage,
+    '#/manutencao': renderManutencaoPage
   };
   (globalPages[currentRoute()] || renderSelector)();
 }
@@ -1130,7 +1131,8 @@ const NAV_ITEMS = [
   { hash: '#/configuracoes', label: 'Configuracoes', icon: ICONS.gear },
   { hash: '#/backups', label: 'Backups', icon: ICONS.archive, adminOnly: true },
   { hash: '#/senhas', label: 'Usuarios e Senhas', icon: ICONS.lock, adminOnly: true },
-  { hash: '#/seguranca', label: 'Inspecao de Seguranca', icon: ICONS.shield, adminOnly: true }
+  { hash: '#/seguranca', label: 'Inspecao de Seguranca', icon: ICONS.shield, adminOnly: true },
+  { hash: '#/manutencao', label: 'Manutenção', icon: ICONS.wrench, adminOnly: true }
 ];
 
 function currentRoute() {
@@ -1196,7 +1198,8 @@ function renderAppShell() {
     '#/configuracoes': renderConfiguracoesPage,
     '#/backups': renderBackupsPage,
     '#/senhas': renderSenhasPage,
-    '#/seguranca': renderSegurancaPage
+    '#/seguranca': renderSegurancaPage,
+    '#/manutencao': renderManutencaoPage
   };
   (pageRenderers[route] || renderDashboardPage)();
 }
@@ -3522,6 +3525,260 @@ async function renderBackupsPage() {
   });
 
   loadBackupsList();
+}
+
+// ================= Central de Manutencao (sala de maquinas) =================
+// Pagina separada, so para o admin da plataforma: tudo que e operacao em um
+// so lugar, com explicacao em cada card. Nada aqui quebra nada sozinho:
+// toda acao destrutiva pede confirmacao antes.
+function formatUptime(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}min`;
+  if (m > 0) return `${m}min`;
+  return `${s}s`;
+}
+
+function copyCmd(text, btn) {
+  const done = () => {
+    const original = btn.innerHTML;
+    btn.innerHTML = 'Copiado!';
+    setTimeout(() => { btn.innerHTML = original; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => toast('Nao foi possivel copiar.', true));
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast('Nao foi possivel copiar.', true); }
+    document.body.removeChild(ta);
+  }
+}
+
+async function renderManutencaoPage() {
+  if (!isGlobalAdmin(currentUser)) {
+    return renderSelector();
+  }
+  const isGlobal = !currentEstablishment;
+  let targetContainer;
+  if (isGlobal) {
+    root.innerHTML = `
+      <div class="selector-screen" style="max-width:1000px; padding:20px; margin:0 auto;">
+        <div style="margin-bottom:20px;">
+          <a href="#" class="btn btn-secondary" style="text-decoration:none;">${ICONS.arrowLeft} Voltar para Seleção</a>
+        </div>
+        <div id="global-maint-content"></div>
+      </div>
+    `;
+    targetContainer = document.getElementById('global-maint-content');
+  } else {
+    mainEl().innerHTML = `<div id="global-maint-content"></div>`;
+    targetContainer = document.getElementById('global-maint-content');
+  }
+  targetContainer.innerHTML = `<div class="loading-state">Lendo a sala de maquinas...</div>`;
+
+  let st;
+  try {
+    st = await api('GET', '/api/maintenance/status');
+  } catch (err) {
+    targetContainer.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  const dot = (on, label) =>
+    `<span title="${escapeHtml(label)}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${on ? '#22c55e' : '#ef4444'};margin-right:6px;vertical-align:baseline;"></span>`;
+  const tenantRows = (st.tenants || []).map((t) => `
+    <tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td>${t.dedicated
+        ? `<span class="cell-muted">${ICONS.database} Dedicado <span class="cell-muted">(${escapeHtml(t.dbName || '')})</span></span>`
+        : `<span class="cell-muted">Compartilhado</span>`}</td>
+      <td style="text-align:right;">${t.appointments}</td>
+      <td style="text-align:right;">
+        ${t.dedicated
+          ? `<button class="action-btn" data-maint="moveback" data-id="${t.establishmentId}" title="Voltar ao banco compartilhado">Voltar</button>`
+          : `<button class="action-btn action-btn-violet" data-maint="migrate" data-id="${t.establishmentId}" title="Criar banco dedicado e migrar sozinho">Migrar</button>`}
+      </td>
+    </tr>`).join('');
+
+  const vpsCmds = 'cd ~/gestor-multi-tenant\ngit pull\nsudo bash scripts/update.sh';
+  const winCmds = 'bash scripts/update.sh';
+
+  targetContainer.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>${ICONS.wrench} Manutenção</h1>
+        <p>Sala de máquinas do sistema — tudo explicado, nada quebra sozinho</p>
+      </div>
+      <button class="btn btn-secondary" id="maint-refresh">${ICONS.rotateCw} Atualizar leitura</button>
+    </div>
+
+    <div class="hint-box">Como ler esta página: <strong>verde = saudável</strong>. Cada card diz <strong>o que é, para que serve e o que acontece quando você clica</strong>. Ações com efeito real sempre pedem confirmação antes.</div>
+
+    <div class="card settings-card">
+      <h3>${dot(true, 'Servidor respondendo')} Saúde do sistema</h3>
+      <p class="cell-muted">Se esta página abriu, o app está no ar. Abaixo, o caminho que um acesso faz até seus dados:</p>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;">
+        ${['Internet', 'Nginx (VPS)', 'App Node', 'PostgreSQL'].map((n) => `
+          <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--border, #e5e7eb);border-radius:10px;">
+            ${dot(true, n + ' ok')} ${n}
+          </span>`).join('<span aria-hidden="true">→</span>')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:8px;">
+        <div><div class="cell-muted">No ar há</div><strong>${escapeHtml(formatUptime(st.uptimeSeconds))}</strong></div>
+        <div><div class="cell-muted">Versão</div><strong>v${escapeHtml(st.version)}${st.gitCommit ? ' · ' + escapeHtml(st.gitCommit) : ''}</strong></div>
+        <div><div class="cell-muted">Node.js</div><strong>${escapeHtml(st.node)} (${escapeHtml(st.platform)})</strong></div>
+        <div><div class="cell-muted">Memória</div><strong>${st.memory.heapUsedMB} MB</strong></div>
+        <div><div class="cell-muted">Ambiente</div><strong>${escapeHtml(st.env.nodeEnv)}</strong></div>
+        <div><div class="cell-muted">Isolamento RLS</div><strong>${dot(st.env.rlsEnabled, 'Row-Level Security')} ${st.env.rlsEnabled ? 'Ativo' : 'DESLIGADO'}</strong></div>
+      </div>
+      ${!st.env.rlsEnabled ? '<div class="hint-box" style="margin-top:10px;">Atenção: o RLS (segunda barreira no banco) está desligado via RLS_ENABLED=false. Só use assim em diagnóstico emergencial.</div>' : ''}
+      ${st.env.seedDemoData ? '<div class="hint-box" style="margin-top:10px;">Atenção: dados de demonstração ligados (SEED_DEMO_DATA=true). Em produção deixe false.</div>' : ''}
+    </div>
+
+    <div class="card settings-card">
+      <h3>${ICONS.store} Dados guardados</h3>
+      <p class="cell-muted">Quantidade de registros por tipo, somando todos os bancos (compartilhado + dedicados).</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:8px;">
+        <div><div class="cell-muted">Lojas</div><strong>${st.counts.establishments || 0}</strong></div>
+        <div><div class="cell-muted">Clientes</div><strong>${st.counts.clients || 0}</strong></div>
+        <div><div class="cell-muted">Agendamentos</div><strong>${st.counts.appointments || 0}</strong></div>
+        <div><div class="cell-muted">Serviços</div><strong>${st.counts.services || 0}</strong></div>
+        <div><div class="cell-muted">Funcionários</div><strong>${st.counts.employees || 0}</strong></div>
+        <div><div class="cell-muted">Usuários</div><strong>${st.counts.users || 0}</strong></div>
+      </div>
+    </div>
+
+    <div class="card settings-card">
+      <h3>${ICONS.archive} Backups</h3>
+      <p class="cell-muted">Cópia do site inteiro (.zip com código + banco). O automático roda sozinho
+        ${st.backups.autoEnabled ? `a cada ${st.backups.intervalHours}h` : '<strong>pausado</strong>'}
+        — antes de qualquer mudança grande, crie um manual aqui.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center;">
+        <button class="btn btn-primary" id="maint-backup-now">${ICONS.archive} Criar backup agora</button>
+        <a href="#/backups" class="btn btn-secondary" style="text-decoration:none;">Abrir página de backups</a>
+        <span class="cell-muted">${st.backups.total} backup(s) guardados${st.backups.latest ? ` · último: ${escapeHtml(st.backups.latest.filename)} (${formatFileSize(st.backups.latest.sizeBytes)})` : ''}</span>
+      </div>
+    </div>
+
+    <div class="card settings-card">
+      <h3>${ICONS.database} Bancos das lojas ${st.dedicatedCount ? `(${st.dedicatedCount} dedicado(s))` : ''}</h3>
+      <p class="cell-muted"><strong>Compartilhado:</strong> todas as lojas no mesmo banco (padrão, mais simples).
+        <strong>Dedicado:</strong> a loja ganha um banco só dela — isolamento físico, ideal para loja gigante.
+        <strong>Migrar</strong> cria o banco e move os dados sozinho, sem editar nada e sem reiniciar.</p>
+      <div style="overflow-x:auto;margin-top:8px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="text-align:left;">
+            <th>Loja</th><th>Banco</th><th style="text-align:right;">Agend.</th><th style="text-align:right;">Ação</th>
+          </tr></thead>
+          <tbody>${tenantRows || '<tr><td colspan="4" class="cell-muted">Nenhuma loja ainda.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card settings-card">
+      <h3>${ICONS.download} Atualização do sistema</h3>
+      <p class="cell-muted">Atualizar = trazer o código novo do GitHub e reinstalar. Seus dados e o <span class="cell-muted">.env</span> são preservados. Passo a passo:</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:8px;">
+        <div>
+          <strong>Na VPS (Ubuntu)</strong>
+          <ol class="cell-muted">
+            <li>Conecte via SSH</li>
+            <li>Rode os 3 comandos ao lado</li>
+            <li>Confira o status no final</li>
+          </ol>
+          <pre style="background:var(--code-bg, #0f172a);color:#e2e8f0;padding:10px;border-radius:8px;white-space:pre-wrap;">${escapeHtml(vpsCmds)}</pre>
+          <button class="btn btn-secondary" id="maint-copy-vps">Copiar comandos</button>
+        </div>
+        <div>
+          <strong>No Windows (esta máquina)</strong>
+          <ol class="cell-muted">
+            <li>Abra o Git Bash na pasta do projeto</li>
+            <li>Rode o comando ao lado</li>
+            <li>Reinicie o run-server.bat</li>
+          </ol>
+          <pre style="background:var(--code-bg, #0f172a);color:#e2e8f0;padding:10px;border-radius:8px;white-space:pre-wrap;">${escapeHtml(winCmds)}</pre>
+          <button class="btn btn-secondary" id="maint-copy-win">Copiar comando</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card settings-card" style="border-color:#f59e0b;">
+      <h3>Zona de atenção: reiniciar</h3>
+      <p class="cell-muted">Use quando o painel pedir (ex.: depois de restaurar um backup).
+        <strong>Na VPS</strong> o serviço sobe sozinho em segundos.
+        <strong>No Windows</strong> o processo morre e você precisa reabrir o run-server.bat.</p>
+      <button class="btn btn-secondary" id="maint-restart">Reiniciar agora</button>
+    </div>
+  `;
+
+  document.getElementById('maint-refresh').addEventListener('click', renderManutencaoPage);
+  document.getElementById('maint-copy-vps').addEventListener('click', (e) => copyCmd(vpsCmds, e.currentTarget));
+  document.getElementById('maint-copy-win').addEventListener('click', (e) => copyCmd(winCmds, e.currentTarget));
+
+  document.getElementById('maint-backup-now').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await api('POST', '/api/backups');
+      toast('Backup criado com sucesso!');
+      renderManutencaoPage();
+    } catch (err) {
+      toast(err.message, true);
+      btn.disabled = false;
+    }
+  });
+
+  targetContainer.querySelectorAll('[data-maint="migrate"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const row = (st.tenants || []).find((t) => t.establishmentId === id);
+      if (!window.confirm(`Migrar "${row ? row.name : id}" para BANCO DEDICADO?\n\nO sistema cria o banco e move os dados sozinho, sem reiniciar.\n\nContinuar?`)) return;
+      btn.disabled = true;
+      try {
+        toast('Migrando loja, aguarde...');
+        await api('POST', `/api/tenant-databases/${id}/provision`, {});
+        toast('Loja em banco dedicado!');
+        renderManutencaoPage();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
+  targetContainer.querySelectorAll('[data-maint="moveback"]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const row = (st.tenants || []).find((t) => t.establishmentId === id);
+      if (!window.confirm(`Voltar "${row ? row.name : id}" ao banco COMPARTILHADO?\n\nContinuar?`)) return;
+      btn.disabled = true;
+      try {
+        await api('POST', `/api/tenant-databases/${id}/move-back`, {});
+        toast('Loja no banco compartilhado.');
+        renderManutencaoPage();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.getElementById('maint-restart').addEventListener('click', async (e) => {
+    if (!window.confirm('Reiniciar o servidor agora?\n\nNa VPS ele sobe sozinho. No Windows, reabra o run-server.bat.')) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const r = await api('POST', '/api/maintenance/restart', {});
+      toast(r.message);
+    } catch (err) {
+      toast('Servidor reiniciando... aguarde e recarregue a página.');
+    }
+  });
 }
 
 // ================= Pagina de Senhas (Gerenciamento de Senhas) =================
