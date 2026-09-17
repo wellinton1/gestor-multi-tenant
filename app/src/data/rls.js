@@ -87,18 +87,30 @@ async function ensureTenantPolicy(client, table, tenantColumn) {
   const physical = table.toLowerCase();
   await client.query(`ALTER TABLE ${physical} ENABLE ROW LEVEL SECURITY`);
   await client.query(`ALTER TABLE ${physical} FORCE ROW LEVEL SECURITY`);
-  await client.query(`DROP POLICY IF EXISTS tenant_isolation ON ${physical}`);
-  await client.query(
-    `CREATE POLICY tenant_isolation ON ${physical}
-       USING (
-         current_setting('${ADMIN_GUC}', true) = 'on'
-         OR ${tenantColumn} = nullif(current_setting('${TENANT_GUC}', true), '')
-       )
-       WITH CHECK (
-         current_setting('${ADMIN_GUC}', true) = 'on'
-         OR ${tenantColumn} = nullif(current_setting('${TENANT_GUC}', true), '')
-       )`
-  );
+  // DROP+CREATE em transacao propria: evita corrida quando multiplos
+  // processos (testes em paralelo, multiplos boots) aplicam o RLS juntos.
+  await client.query('BEGIN');
+  try {
+    await client.query(`DROP POLICY IF EXISTS tenant_isolation ON ${physical}`);
+    await client.query(
+      `CREATE POLICY tenant_isolation ON ${physical}
+         USING (
+           current_setting('${ADMIN_GUC}', true) = 'on'
+           OR ${tenantColumn} = nullif(current_setting('${TENANT_GUC}', true), '')
+         )
+         WITH CHECK (
+           current_setting('${ADMIN_GUC}', true) = 'on'
+           OR ${tenantColumn} = nullif(current_setting('${TENANT_GUC}', true), '')
+         )`
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) { /* ignora */ }
+    // 42710 = policy ja criada por outro processo concorrente: estado final
+    // identico ao desejado, pode ignorar.
+    if (err && err.code === '42710') return;
+    throw err;
+  }
 }
 
 // Configura os GUCs de RLS na transacao corrente (set_config(..., true) tem

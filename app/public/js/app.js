@@ -39,7 +39,8 @@ const ICONS = {
   rotateCw: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>',
   info: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>',
   archive: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9"/><path d="M10 13h4"/></svg>',
-  download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>'
+  download: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>',
+  database: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>'
 };
 
 const NICHE_ICON = {
@@ -698,9 +699,18 @@ async function renderSelector() {
   const grid = document.getElementById('selector-grid');
   const canPause = currentUser && currentUser.role === 'admin' &&
     (currentUser.allowedEstablishmentIds === null || currentUser.allowedEstablishmentIds === undefined);
+  // Status de bancos dedicados (so admin global; falha silenciosa = sem badges).
+  let dedicatedById = {};
+  if (isGlobalAdmin(currentUser)) {
+    try {
+      const dbStatus = await api('GET', '/api/tenant-databases');
+      for (const s of (dbStatus.databases || [])) dedicatedById[s.establishmentId] = s;
+    } catch (e) { /* sem status de banco dedicado */ }
+  }
   grid.innerHTML = establishments.map((est) => `
     <div class="tenant-card ${est.paused ? 'tenant-paused' : ''}">
       ${est.paused ? '<div class="paused-overlay-badge" title="Loja pausada pelo administrador da plataforma">' + ICONS.pause + ' Pausada</div>' : ''}
+      ${dedicatedById[est.id] && dedicatedById[est.id].dedicated ? '<div class="paused-overlay-badge" style="top:34px" title="Loja com banco de dados dedicado (isolamento fisico)">' + ICONS.database + ' Banco dedicado</div>' : ''}
       <div class="brand-icon" style="margin-bottom:14px;">${est.logoDataUrl ? `<img src="${est.logoDataUrl}"/>` : nicheIcon(est.niche)}</div>
       <div class="niche-tag">${escapeHtml(est.niche)}</div>
       <h3>${escapeHtml(est.name)}</h3>
@@ -719,6 +729,10 @@ async function renderSelector() {
             : `<button class="btn-icon btn-pause" data-id="${est.id}" title="Pausar loja (fechar portal sem perder dados)">${ICONS.pause}</button>`
           ) : ''}
           ${canPause ? `<button class="btn-icon danger delete-tenant-btn" data-id="${est.id}" title="Excluir estabelecimento">${ICONS.trash}</button>` : ''}
+          ${canPause ? (dedicatedById[est.id] && dedicatedById[est.id].dedicated
+            ? `<button class="btn-icon move-back-db-btn" data-id="${est.id}" title="Voltar ao banco compartilhado">${ICONS.database}</button>`
+            : `<button class="btn-icon migrate-db-btn" data-id="${est.id}" title="Migrar para banco dedicado (automatico)">${ICONS.database}</button>`
+          ) : ''}
         </div>
       </div>
       ${currentUser && currentUser.role === 'admin' ? `<a class="create-user-link" data-id="${est.id}" href="#">Criar acesso</a>` : ''}
@@ -762,6 +776,53 @@ async function renderSelector() {
         await renderSelector();
       } catch (err) {
         toast(err.message, true);
+      }
+    });
+  });
+  grid.querySelectorAll('.migrate-db-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const est = establishments.find((item) => item.id === id);
+      if (!est) return;
+      const ok = window.confirm(
+        `Migrar "${est.name}" para um BANCO DEDICADO?\n\n` +
+        `O sistema cria o banco sozinho, move todos os dados da loja e ativa o isolamento fisico — sem editar .env e sem reiniciar.\n\n` +
+        `Continuar?`
+      );
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        toast('Migrando loja para banco dedicado, aguarde...');
+        await api('POST', `/api/tenant-databases/${id}/provision`, {});
+        toast('Loja migrada para banco dedicado com sucesso.');
+        await renderSelector();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
+      }
+    });
+  });
+  grid.querySelectorAll('.move-back-db-btn').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const est = establishments.find((item) => item.id === id);
+      if (!est) return;
+      const ok = window.confirm(
+        `Voltar "${est.name}" ao banco COMPARTILHADO?\n\n` +
+        `Os dados voltam ao banco padrao. O banco dedicado e removido do roteamento.\n\n` +
+        `Continuar?`
+      );
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await api('POST', `/api/tenant-databases/${id}/move-back`, {});
+        toast('Loja voltou ao banco compartilhado.');
+        await renderSelector();
+      } catch (err) {
+        toast(err.message, true);
+        btn.disabled = false;
       }
     });
   });

@@ -268,6 +268,9 @@ if [ "$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_US
 else
   sudo -u postgres psql -v ON_ERROR_STOP=1 -q -c "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD';"
 fi
+# CREATEDB: permite ao app criar bancos dedicados por tenant sozinho
+# (1 clique no painel, sem acesso de superusuario em producao).
+sudo -u postgres psql -v ON_ERROR_STOP=1 -q -c "ALTER ROLE \"$DB_USER\" WITH CREATEDB;"
 if [ "$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" != "1" ]; then
   sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
 fi

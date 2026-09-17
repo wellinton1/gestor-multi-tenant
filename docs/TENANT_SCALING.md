@@ -61,33 +61,53 @@ por `id`; o RLS continua por `establishment_id`.
 
 ---
 
-## 4. Nível 2 — Banco dedicado para cliente de grande porte
+## 4. Nível 2 — Banco dedicado para cliente de grande porte ✅ IMPLEMENTADO
 
 Cenário: uma loja "enterprise" (franquia com dezenas de milhares de
 agendamentos/mês) precisa de isolamento físico e/ou recursos exclusivos.
 
-### Design (ponto único de mudança: `store.js`)
+### Como usar (100% automático pelo painel)
+
+1. Abra a tela de estabelecimentos como **admin da plataforma**.
+2. Clique no ícone de **banco de dados** no card da loja → confirmar.
+3. Pronto: o sistema **cria o banco sozinho** (`TENANT_DB_PREFIX` + id),
+   move todos os dados da loja, persiste o mapa em
+   `data/tenant-databases.json` (entra no backup) e ativa o isolamento —
+   **sem editar `.env`, sem CLI, sem reiniciar**. O card ganha o selo
+   "Banco dedicado"; o mesmo botão volta a loja ao compartilhado.
+
+Alternativas (manual/CLI, mesmo efeito):
 
 ```
 DATABASE_URL              = postgres://gestor:...@127.0.0.1:5432/gestor   (padrão)
-TENANT_DATABASE_OVERRIDES = {"<establishmentId>":"postgres://gestor:...@127.0.0.1:5432/gestor_clienteX"}
+TENANT_DATABASE_OVERRIDES = {"<establishmentId>":"postgres://gestor:...@127.0.0.1:5432/gestor_lojaX"}
 ```
 
-1. `store.js` ganharia um **mapa de pools**: `getPoolFor(establishmentId)`
-   resolve o pool da loja (override) ou o pool padrão.
-2. O cache em memória passa a ser **por banco**: `caches[dbUrl]`, carregado no
-   boot e no timer de sincronização.
-3. Rotas não mudam: o contexto de tenant (AsyncLocalStorage) já viaja com a
-   requisição — o store só consulta o pool certo.
-4. Backup/restore granular vira trivial (`pg_dump` do banco do cliente).
-5. Migração de um tenant: dump filtrado por `establishment_id` → restore no
-   banco novo → adicionar override → remover linhas do banco origem.
+- `npm run migrate:tenant -- <estId> "postgres://..." --create-db` + entrada
+  no `.env` + restart; ou só o `.env` se o banco já existir.
+- Automático por volume: `TENANT_AUTO_PROVISION=true` +
+  `TENANT_AUTO_MIN_APPOINTMENTS=50000` — a cada 24h migra sozinho lojas
+  compartilhadas acima do limite (desligado por padrão).
 
-### Por que NÃO fazer agora
+Rotas não mudam: o contexto de tenant (AsyncLocalStorage) já viaja com a
+requisição — o store consulta o pool certo (`getPoolFor(establishmentId)`).
+Pré-requisito: o usuário do banco precisa de `CREATEDB` (o `install.sh` já
+concede; em installs antigos rode
+`sudo -u postgres psql -c "ALTER ROLE gestor WITH CREATEDB"`).
 
-- Volume atual (dezenas/centenas de lojas pequenas) não justifica;
-- `install.sh`, `backup.sh` e o PostgreSQL embutido do Windows assumem 1 banco;
-- Onboarding de tenant novo passaria a exigir provisionamento de banco.
+Implementado em `src/data/store.js`: mapa de pools por tenant, cache por
+banco (carregado no boot e no timer), RLS/schema aplicados em cada banco
+dedicado, `users` sempre global no banco padrão, `migrateTenantData()` move
+linhas filtradas por `establishmentId` e remove da origem. Backup em `.zip`
+continua unificado (snapshot mesclado); backup granular por cliente via
+`pg_dump` do banco dedicado.
+
+### Quando usar
+
+- Somente sob demanda enterprise; volume atual (dezenas/centenas de lojas
+  pequenas) continua no banco compartilhado;
+- `install.sh`, `backup.sh` e o PostgreSQL embutido do Windows assumem 1 banco
+  (dedicados exigem Postgres acessível pela `DATABASE_URL` do override).
 
 ---
 
@@ -119,5 +139,5 @@ FileStore em disco — multi-instância exige sessão no banco (ex. tabela
 - [x] Seed incremental: não reescreve o banco a cada boot;
 - [x] Cache sincronizado em 1 round-trip por ciclo;
 - [ ] Particionamento: só quando gatilhos do §2 baterem;
-- [ ] Banco por cliente: só sob demanda enterprise (§4);
+- [x] Banco por cliente: implementado (§4) — usar só sob demanda enterprise;
 - [ ] Sessões no banco: pré-requisito para multi-instância (§5).

@@ -40,6 +40,7 @@ const setupRoutes = require('./src/routes/setup');
 const paymentsRoutes = require('./src/routes/payments');
 const backupsRoutes = require('./src/routes/backups');
 const couponsRoutes = require('./src/routes/coupons');
+const tenantDatabasesRoutes = require('./src/routes/tenantDatabases');
 const { startBackupScheduler } = require('./src/utils/backup');
 
 const app = express();
@@ -280,6 +281,7 @@ app.use('/api/security', securityRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/backups', backupsRoutes);
 app.use('/api/coupons', couponsRoutes);
+app.use('/api/tenant-databases', tenantDatabasesRoutes);
 
 // Static frontend com cache-control
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -358,6 +360,11 @@ async function boot() {
     console.error('Erro durante execucao do seed:', err.message);
   }
   startBackupScheduler();
+  try {
+    tenantDatabasesRoutes.startTenantAutoProvisionScheduler();
+  } catch (err) {
+    console.error('Erro ao iniciar auto-provision de bancos dedicados:', err.message);
+  }
   await startServer();
 }
 
