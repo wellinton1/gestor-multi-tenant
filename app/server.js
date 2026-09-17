@@ -85,6 +85,11 @@ app.use((req, res, next) => {
 // ===== SECURITY =====
 
 // Helmet - security headers
+// NOTA: HSTS e upgrade-insecure-requests so fazem sentido com HTTPS real
+// (Nginx + Certbot). Com HTTP puro (IP da VPS) eles mandam o browser
+// reescrever tudo para https:// -> ERR_CONNECTION_REFUSED e pagina em branco.
+// Por isso amarramos ao COOKIE_SECURE (install.sh so poe true com HTTPS).
+const httpsEnabled = cookieSecure === true;
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -101,12 +106,16 @@ app.use(helmet({
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
       baseUri: ["'self'"],
-      formAction: ["'self'"]
+      formAction: ["'self'"],
+      upgradeInsecureRequests: httpsEnabled ? [] : null
     }
   },
   crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: httpsEnabled ? undefined : false,
+  crossOriginResourcePolicy: false,
+  originAgentCluster: false,
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  hsts: isProduction ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+  hsts: httpsEnabled ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
   noSniff: true,
   frameguard: { action: 'deny' }
 }));
