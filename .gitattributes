@@ -1,0 +1,2 @@
+# Garante LF nos scripts shell mesmo em checkout Windows (CRLF quebra o bash).
+*.sh text eol=lf

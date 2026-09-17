@@ -3,13 +3,80 @@
 # update.sh - atualiza a aplicacao ja instalada com uma versao mais nova,
 # preservando os dados (PostgreSQL + data/) e as configuracoes (.env).
 #
-# Uso: rode este script de dentro da pasta extraida da NOVA versao do zip:
-#   sudo bash scripts/update.sh [/opt/gestor-multi-tenant]
+# Uso:
+#   Linux/VPS: sudo bash scripts/update.sh [/opt/gestor-multi-tenant]
+#   Windows (Git Bash): bash scripts/update.sh
 #
 set -euo pipefail
 
 SERVICE_NAME="gestor-multi-tenant"
 INSTALL_DIR="${1:-/opt/gestor-multi-tenant}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SOURCE_APP_DIR="$PROJECT_ROOT/app"
+
+# ---------- deteccao de plataforma ----------
+# Git Bash/MSYS/Cygwin = Windows (update local, sem systemd nem /opt).
+# WSL responde "Linux" e segue o fluxo Linux normalmente.
+detect_os() {
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT|Windows*) printf 'windows' ;;
+    *) printf 'linux' ;;
+  esac
+}
+
+# ---------- fluxo Windows (maquina local) ----------
+# No Windows nao ha copia para /opt nem servico systemd: o projeto roda
+# na propria pasta (run-server.bat). Atualizar = git pull + npm install.
+# Rode no Git Bash (o PowerShell nao executa .sh diretamente).
+update_windows() {
+  echo "Plataforma detectada: Windows — atualizacao local (sem systemd)."
+  for cmd in git node npm; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      echo "ERRO: '$cmd' nao encontrado no PATH. Instale e tente de novo."
+      exit 1
+    fi
+  done
+  if [ ! -f "$SOURCE_APP_DIR/server.js" ]; then
+    echo "ERRO: pasta 'app' nao encontrada em $PROJECT_ROOT."
+    exit 1
+  fi
+  echo ""
+  echo "IMPORTANTE: crie um backup pelo painel antes (Backups -> Criar Backup Agora)."
+  echo "O banco local (pgdata/) nao pode ser copiado com o servidor rodando."
+  local confirm="S"
+  if [ -t 0 ]; then
+    read -rp "Continuar com git pull + npm install? (S/n): " confirm
+    confirm="${confirm:-S}"
+  fi
+  if [[ ! "$confirm" =~ ^[sS]$ ]]; then
+    echo "Atualizacao cancelada."
+    exit 1
+  fi
+  echo "Baixando codigo novo (git pull)..."
+  if ! git -C "$PROJECT_ROOT" pull --ff-only; then
+    echo "ERRO: git pull falhou (provavel alteracao local)."
+    echo "Veja com: git -C \"$PROJECT_ROOT\" status --short"
+    echo "Descarte com: git -C \"$PROJECT_ROOT\" checkout -- <arquivo>"
+    echo "Ou guarde com: git -C \"$PROJECT_ROOT\" stash push -m local"
+    exit 1
+  fi
+  echo "Instalando dependencias..."
+  cd "$SOURCE_APP_DIR"
+  npm install --no-audit --no-fund
+  node --check server.js && echo "Sintaxe OK."
+  echo ""
+  echo "Atualizacao concluida (Windows)."
+  echo "Reinicie o servidor: feche a janela do run-server e abra de novo"
+  echo "(botao direito -> Executar como administrador, se PORT=80)."
+  echo "Confira no console: Servidor rodando em http://localhost:<porta>"
+}
+
+if [ "$(detect_os)" = "windows" ]; then
+  update_windows
+  exit 0
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Rode como root: sudo bash scripts/update.sh"
@@ -20,10 +87,6 @@ if [ ! -d "$INSTALL_DIR" ]; then
   echo "Instalacao nao encontrada em $INSTALL_DIR. Rode install.sh primeiro."
   exit 1
 fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SOURCE_APP_DIR="$PROJECT_ROOT/app"
 
 # Le uma chave do .env sem carregar nada no shell.
 env_get() {
