@@ -1,0 +1,20 @@
+{
+  "name": "Gestor Multitenant",
+  "short_name": "Gestor",
+  "description": "Painel de gestao e agendamento para estabelecimentos",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1116",
+  "theme_color": "#0f1116",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230f1116'/%3E%3Crect x='128' y='128' width='256' height='256' rx='48' fill='%230d9488'/%3E%3Crect x='192' y='192' width='128' height='128' rx='24' fill='%23f6f7f9'/%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

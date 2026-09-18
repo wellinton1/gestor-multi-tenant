@@ -1,0 +1,490 @@
+/* ============================================================================
+   RESPONSIVE.CSS — camada de layout mobile (app nativo) — SOMENTE LAYOUT
+   Carregado DEPOIS de style.css e tokens-base.css; nao toca em temas, tokens
+   ou regras de negocio. Sem !important (exceto onde documentado).
+   ============================================================================
+   Breakpoints de referencia: --bp-sm=480 | --bp-md=768 | --bp-lg=1024 | --bp-xl=1280
+   ============================================================================ */
+
+:root {
+  --bp-sm: 480px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+}
+
+/* ============================================================================
+   BASE GLOBAL (qualquer tela)
+   ============================================================================ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+img, video { max-width: 100%; height: auto; }
+
+/* nunca deixa o conteudo empurrar scroll horizontal no app inteiro */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+body {
+  min-height: 100vh; /* fallback */
+  min-height: 100dvh;
+}
+
+/* toque nativo: sem highlight azul, sem delay de clique em botoes e links */
+a, button,
+.btn, .btn-icon, .nav-item, .theme-toggle-btn, .modal-close,
+.qty-btn, .service-action-btn, .time-slot-btn, .bottom-book-btn,
+.pill, .access-link, input[type="checkbox"], label {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* feedback tactil visual (substitui :hover em telas sem precisa) */
+@media (hover: none) {
+  a:hover { text-decoration: none; }
+  button:active,
+  .btn:active,
+  .btn-icon:active,
+  .nav-item:active {
+    transform: scale(0.98);
+    filter: brightness(0.96);
+  }
+}
+
+/* ============================================================================
+   TABELAS -> CARDS EMPILHADOS (painel, <=768px)
+   O rotulo vem do atributo data-label, injetado em runtime pelo responsive.js
+   a partir do <th> da coluna — HTML original nao e tocado.
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  /* pode haver tabelas fora de .card (ex: cupons) — escopo geral no painel */
+  .main table,
+  .card table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  /* thead sai do fluxo; cada linha vira um card */
+  .main table thead {
+    display: none;
+  }
+
+  .main table tbody tr,
+  .main table tbody tr:hover {
+    display: block;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    margin-bottom: 10px;
+    padding: 4px 12px;
+    box-shadow: none;
+  }
+
+  .main table td,
+  .main table th {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: right;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    min-height: 32px;
+    word-break: break-word;
+  }
+
+  .main table td:last-child {
+    border-bottom: none; /* sem acao flutuante */
+  }
+
+  /* rotulo da coluna via data-label injetado em runtime (ver responsive.js) */
+  .main table td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  /* celulas que de hoje sao containers, ficam alinhadas */
+  .main table td.cell-strong,
+  .main table td.cell-muted {
+    display: flex;
+  }
+}
+
+/* ============================================================================
+   PAINEL <=768px — SIDEBAR vira DRAWER + TOPBAR + BOTTOM NAV
+   (elementos .res-* sao criados pelo responsive.js; nada do HTML muda)
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .app-shell {
+    display: block;
+    position: relative;
+  }
+
+  /* sidebar off-canvas */
+  .app-shell .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(84vw, 300px);
+    min-width: 0;
+    height: 100dvh;
+    z-index: 80;
+    transform: translateX(-100%);
+    transition: transform var(--transition);
+    box-shadow: none;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+    touch-action: pan-y;
+  }
+
+  body.sidebar-open .app-shell .sidebar {
+    transform: translateX(0);
+    box-shadow: var(--shadow-xl);
+  }
+
+  /* lock de scroll quando drawer aberto */
+  body.sidebar-open { overflow: hidden; }
+
+  /* topbar fixa (injetada pelo JS) */
+  .res-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    background: var(--card-bg, #fff);
+    border-bottom: 1px solid var(--border);
+  }
+  .res-hamburger {
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .res-hamburger:active { background: var(--btn-secondary-hover); }
+  .res-hamburger .bars {
+    width: 20px;
+    height: 14px;
+    position: relative;
+    display: block;
+  }
+  .res-hamburger .bars::before,
+  .res-hamburger .bars::after,
+  .res-hamburger .bars > span {
+    content: '';
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transition: transform var(--transition-fast), opacity var(--transition-fast);
+  }
+  .res-hamburger .bars::before { top: 0; }
+  .res-hamburger .bars > span { top: 6px; }
+  .res-hamburger .bars::after { bottom: 0; }
+
+  body.sidebar-open .res-hamburger .bars::before {
+    transform: translateY(6px) rotate(45deg);
+  }
+
+  body.sidebar-open .res-hamburger .bars > span { opacity: 0; }
+  body.sidebar-open .res-hamburger .bars::after {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+  .res-topbar-brand {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    flex: 1;
+    overflow: hidden;
+  }
+  .res-topbar-brand strong {
+    font-size: 14.5px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .res-topbar-brand small {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-transform: capitalize;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .res-topbar .theme-toggle-btn {
+    width: 44px;
+    padding: 10px 0;
+    text-align: center;
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+  .res-topbar .theme-toggle-btn .txt { display: none; } /* compacta: so icone */
+
+  /* backdrop do drawer */
+  .res-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: var(--overlay-bg);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-fast);
+  }
+  body.sidebar-open .res-drawer-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* conteudo ocupa a tela toda */
+  .app-shell .main {
+    width: 100%;
+    max-width: none;
+    padding: 16px 14px;
+    /* espaco para topbar + bottom nav + gesto do Android */
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* stat cards em 2 colunas ate 480, depois 1 (arquivo carregado por ultimo) */
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* bottom nav fixa, estilo app Android */
+  .res-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    justify-content: space-around;
+    align-items: stretch;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
+    background: var(--card-bg, #fff);
+    border-top: 1px solid var(--border);
+  }
+  .res-bottom-nav a,
+  .res-bottom-nav button {
+    flex: 1;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 2px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .res-bottom-nav .ic { font-size: 18px; }
+  .res-bottom-nav .active {
+    color: var(--accent);
+    background: rgba(var(--accent-rgb, 13, 148, 136), 0.08);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+   <=480px — celulares pequenos: grids colapsam para 1 coluna e botoes ocupam
+   a largura toda (mais alcancaveis com o polegar)
+   ---------------------------------------------------------------------------- */
+
+@media (max-width: 480px) {
+  .stat-grid,
+  .services-grid,
+  .selector-grid,
+  .portal-services-grid,
+  .niche-selector-grid,
+  .palette-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .page-header h1 {
+    font-size: clamp(20px, 6vw, 24px);
+  }
+
+  .app-shell .main { padding: 14px 12px; }
+
+  /* modais fullscreen (com o padrao do briefing) */
+  .modal-overlay { padding: 0; }
+  .modal,
+  .modal-content {
+    width: 100%;
+    min-height: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: 18px 16px;
+    padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  }
+
+  /* -------------------------------------------------------------------------
+     formularios: inputs grandes, teclado confortavel (>=16px evita zoom).
+     [$1] :not() evita estilar checkbox/radio/color/file
+     ------------------------------------------------------------------------- */
+  .form-field input,
+  .form-field select,
+  .form-field textarea,
+  .portal-booking-form .form-field input,
+  .portal-booking-form .form-field textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 44px;
+    padding: 12px 14px;
+  }
+  .form-field label { font-size: 13px; }
+
+  .modal-actions {
+    flex-direction: column-reverse; /* acao principal embaixo, alcance do polegar */
+    gap: 10px;
+  }
+  /* botoes full-width escopados ao modal e ao submit (nao global) */
+  .modal-actions .btn,
+  .modal form button[type="submit"],
+  form button[type="submit"] {
+    width: 100%;
+    min-height: 46px;
+    justify-content: center;
+  }
+
+  .btn-icon { min-width: 44px; min-height: 44px; }
+}
+
+/* ============================================================================
+   MEDIA QUERIES ETAPA 3 — breakpoint MD: 481..768 (1 coluna, cards 1-2)
+   ============================================================================ */
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .app-shell .main { padding: 20px 20px; padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .services-grid { grid-template-columns: repeat(2, 1fr); }
+  .selector-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+  .modal-overlay { padding: 12px; }
+  .modal { max-height: calc(100dvh - 24px); border-radius: var(--radius-2xl); padding: 22px 20px; }
+
+  .form-field input,
+  .form-field select,
+  .form-field textarea,
+  .portal-booking-form .form-field input,
+  .portal-booking-form .form-field textarea,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+    min-height: 44px;
+    padding: 11px 14px;
+  }
+}
+
+/* ============================================================================
+   LG 769..1024 — tablet 7/10":
+   o style.css ja cuida do essencial (grid 2 col, sidebar presente).
+   Aqui so aproveitamos melhor a largura; sidebar original preservada.
+   ============================================================================ */
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .main { max-width: none; padding: 26px 32px; }
+  .page-header h1 { font-size: 26px; }
+}
+
+/* ============================================================================
+   PORTAL CLIENTE (/loja/:id) — mobile-first extra (Etapa 5)
+   ============================================================================ */
+
+/* resumo "seu pedido" + form empilham no tablet 761..768 */
+@media (max-width: 768px) {
+  .portal-page { font-size: 15.5px; }
+
+  .portal-bottom-bar {
+    padding: 12px 14px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    gap: 10px;
+  }
+  .bottom-book-btn {
+    min-width: 130px;
+    min-height: 50px;
+    padding: 10px 18px;
+  }
+
+  /* alvos de toque grandes nas horas disponiveis */
+  .time-slot-btn {
+    min-height: 48px;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+  .qty-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .portal-booking-form .form-field input[type="date"] { min-height: 48px; }
+}
+
+@media (max-width: 480px) {
+  .portal-hero { padding: 40px 16px 56px; }
+  .portal-hero h1 { font-size: 24px; }
+  .bottom-summary { font-size: 13px; gap: 8px; }
+  .bottom-summary strong { font-size: 19px; }
+
+  /* modal sucesso do portal tela cheia */
+  .modal.portal-success-modal,
+  .modal { border-radius: 0; }
+}
+
+/* ============================================================================
+   UTILITARIOS — escondidos no desktop
+   ============================================================================ */
+
+@media (min-width: 769px) {
+  .res-topbar,
+  .res-bottom-nav,
+  .res-drawer-backdrop { display: none; }
+  body.sidebar-open { overflow: visible; }
+}
+
+/* ============================================================================
+   ACESSIBILIDADE — prefers-reduced-motion
+   Ja coberto por style.css (2750) e tokens-base.css (140); sem duplicar.
+   ============================================================================ */

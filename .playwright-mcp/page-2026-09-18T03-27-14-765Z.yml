@@ -1,0 +1,15 @@
+- generic [ref=e3]:
+  - button "Modo Escuro" [ref=e4] [cursor=pointer]
+  - generic [ref=e7]:
+    - heading "Painel de Gestao" [level=1] [ref=e13]
+    - paragraph [ref=e14]: Entre para gerenciar seus estabelecimentos
+    - generic [ref=e15]:
+      - generic [ref=e16]:
+        - generic [ref=e17]: Email
+        - textbox [active] [ref=e18]
+      - generic [ref=e19]:
+        - generic [ref=e20]: Senha
+        - textbox [ref=e21]
+      - button "Entrar" [ref=e22] [cursor=pointer]
+    - generic [ref=e23]: ou continue com
+    - button "Continuar com Google" [ref=e24] [cursor=pointer]

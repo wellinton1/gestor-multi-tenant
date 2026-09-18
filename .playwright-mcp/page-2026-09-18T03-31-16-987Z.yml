@@ -1,0 +1,56 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - button "Fechar menu" [expanded] [ref=f2e5] [cursor=pointer]
+    - generic [ref=f2e8]:
+      - strong [ref=f2e9]: Barbearia Central
+      - generic [ref=f2e10]: Barbearia
+    - button "Alternar tema" [ref=f2e11] [cursor=pointer]:
+      - generic [ref=f2e12]: 🌙
+      - text: Modo Escuro
+  - complementary [ref=f2e13]:
+    - generic [ref=f2e14]:
+      - generic [ref=f2e15]: 💈
+      - generic [ref=f2e16]:
+        - generic [ref=f2e17]: Barbearia Central
+        - generic [ref=f2e18]: Barbearia
+    - navigation [ref=f2e19]:
+      - link "📊 Dashboard" [ref=f2e20] [cursor=pointer]:
+        - /url: "#/dashboard"
+        - generic [ref=f2e21]: 📊
+        - text: Dashboard
+      - link "📋 Pedidos" [ref=f2e22] [cursor=pointer]:
+        - /url: "#/pedidos"
+        - generic [ref=f2e23]: 📋
+        - text: Pedidos
+      - link "👥 Clientes" [ref=f2e24] [cursor=pointer]:
+        - /url: "#/clientes"
+        - generic [ref=f2e25]: 👥
+        - text: Clientes
+      - link "⚙️ Configuracoes" [ref=f2e26] [cursor=pointer]:
+        - /url: "#/configuracoes"
+        - generic [ref=f2e27]: ⚙️
+        - text: Configuracoes
+    - button "🌙 Modo Escuro" [ref=f2e29] [cursor=pointer]:
+      - generic [ref=f2e30]: 🌙
+      - text: Modo Escuro
+  - main [ref=f2e31]:
+    - table [ref=f2e33]:
+      - rowgroup [ref=f2e34]:
+        - row [ref=f2e35]:
+          - cell "Cliente Maria" [ref=f2e36]
+          - cell "Data 01/10" [ref=f2e37]
+          - cell "Total R$ 50" [ref=f2e38]
+          - cell "Status Pendente" [ref=f2e39]
+  - navigation "Navigacao principal" [ref=f2e41]:
+    - link "Dashboard" [ref=f2e42] [cursor=pointer]:
+      - /url: "#/dashboard"
+      - generic [aria-hidden] [ref=f2e43]: 📊
+    - link "Pedidos" [ref=f2e45] [cursor=pointer]:
+      - /url: "#/pedidos"
+      - generic [aria-hidden] [ref=f2e46]: 📋
+    - link "Clientes" [ref=f2e48] [cursor=pointer]:
+      - /url: "#/clientes"
+      - generic [aria-hidden] [ref=f2e49]: 👥
+    - link "Configuracoes" [ref=f2e51] [cursor=pointer]:
+      - /url: "#/configuracoes"
+      - generic [aria-hidden] [ref=f2e52]: ⚙️
