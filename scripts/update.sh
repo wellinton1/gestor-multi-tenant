@@ -164,6 +164,15 @@ repair_windows_env() {
     sudo -u postgres createdb -O "$db_user" "$db_name"
   fi
 
+  # Preserva integracoes (Google/SMTP/URL) antes de reconstruir.
+  _preserve=""
+  for _k in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REDIRECT_URI SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS SMTP_FROM APP_BASE_URL PASSWORD_RESET_EXPIRES_HOURS; do
+    _v="$(env_get "$env_file" "$_k")"
+    if [ -n "$_v" ]; then
+      _preserve="${_preserve}${_k}=${_v}
+"
+    fi
+  done
   cat > "$env_file" <<EOF
 NODE_ENV=production
 PORT=$app_port
@@ -180,6 +189,10 @@ BACKUP_INTERVAL_HOURS=6
 BACKUP_MAX_FILES=30
 RLS_ENABLED=true
 EOF
+  if [ -n "$_preserve" ]; then
+    printf '%s' "$_preserve" >> "$env_file"
+    echo "Integracoes Google/SMTP preservadas."
+  fi
   echo ".env reconstruido para a VPS (senha do banco atualizada)."
 }
 

@@ -214,6 +214,10 @@ para aplicar.
 | `BACKUP_AUTO_ENABLED` | `true`/`false` - backup automatico do site inteiro em .zip (padrao: `true`) |
 | `BACKUP_INTERVAL_HOURS` | Intervalo do backup automatico em horas (padrao: `6`)                 |
 | `BACKUP_MAX_FILES` | Quantos backups automaticos manter antes de apagar os mais antigos (padrao: `30`) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` | Login "Continuar com Google". O redirect precisa ser **identico** ao cadastrado no Google Cloud Console (inclui porta). Ex. VPS por IP: `http://SEU_IP:3000/api/auth/google/callback`. Sem elas, `/api/auth/google` retorna 503 e o botao fica oculto. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | Email de recuperacao de senha. Sem SMTP, o pedido e so registrado no log (sem email). Ex. Gmail: `smtp.gmail.com:587`, `SMTP_SECURE=false`, `SMTP_PASS` = senha de app. |
+| `APP_BASE_URL` | URL publica usada no link do email de reset. Ex.: `http://18.218.26.112:3000` ou `https://painel.seudominio.com` |
+| `PASSWORD_RESET_EXPIRES_HOURS` | Validade do token de reset em horas (padrao: `2`) |
 
 ### Exemplos de `.env`
 

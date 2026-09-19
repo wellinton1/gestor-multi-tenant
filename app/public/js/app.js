@@ -323,6 +323,16 @@ window.addEventListener('hashchange', () => {
 function render() {
   if (!currentUser) {
     if (setupNeeded) return renderSetup();
+    // Link do email de recuperacao: /reset-password?token=... ou ?token=...
+    // (o servidor serve a SPA nessa rota; cai aqui pois nao ha login).
+    try {
+      const _path = window.location.pathname || '';
+      const _p = new URLSearchParams(window.location.search);
+      const _resetToken = _p.get('token');
+      if (_path === '/reset-password' || (_resetToken && _path === '/')) {
+        if (_resetToken) return renderResetPassword(_resetToken);
+      }
+    } catch (e) { /* ignore */ }
     // Erros vindos do callback Google OAuth (?google_error=1, ?google_2fa=1, ?google_error=not_configured)
     try {
       const params = new URLSearchParams(window.location.search);
@@ -491,6 +501,9 @@ function renderLogin(errorMsg) {
             <label>Senha</label>
             <input type="password" name="password" required />
           </div>
+          <div style="text-align:right;margin:-4px 0 12px;">
+            <a href="#" id="forgot-password-link" style="font-size:13px;">Esqueci minha senha</a>
+          </div>
           <button type="submit" class="btn btn-primary">Entrar</button>
         </form>
         <div class="divider">ou continue com</div>
@@ -519,6 +532,124 @@ function renderLogin(errorMsg) {
   
   document.getElementById('google-login-btn').addEventListener('click', () => {
     window.location.href = '/api/auth/google';
+  });
+
+  document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    renderForgotPassword();
+  });
+}
+
+// ================= RECUPERACAO DE SENHA =================
+// Fluxo: "Esqueci minha senha" -> POST /api/auth/forgot-password {email}
+// -> email com link /reset-password?token=... -> renderResetPassword()
+// -> POST /api/auth/reset-password {token, password, confirmPassword}.
+function renderForgotPassword(infoMsg) {
+  const currentTheme = getTheme();
+  root.innerHTML = `
+    <div class="centered-screen">
+      <button class="top-theme-toggle" id="forgot-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
+      <div class="login-card">
+        <div class="brand-icon">${ICONS.lock || ICONS.shield}</div>
+        <h1>Recuperar senha</h1>
+        <p class="subtitle">Informe seu email para receber o link de redefinicao</p>
+        ${infoMsg ? `<div class="hint-box">${escapeHtml(infoMsg)}</div>` : ''}
+        <form id="forgot-form">
+          <div class="form-field">
+            <label>Email</label>
+            <input type="email" name="email" required autofocus autocomplete="email" />
+          </div>
+          <button type="submit" class="btn btn-primary">Enviar link</button>
+        </form>
+        <div style="text-align:center;margin-top:12px;">
+          <a href="#" id="back-to-login" style="font-size:13px;">Voltar ao login</a>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('forgot-theme-toggle').addEventListener('click', toggleTheme);
+  document.getElementById('back-to-login').addEventListener('click', (e) => {
+    e.preventDefault();
+    window.history.replaceState({}, document.title, '/');
+    renderLogin();
+  });
+  document.getElementById('forgot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      const res = await api('POST', '/api/auth/forgot-password', { email: fd.get('email') });
+      // Em dev sem SMTP o backend pode retornar devToken: mostra para teste.
+      const extra = res && res.devToken ? `<br><br>Modo dev (sem SMTP): <code style="word-break:break-all;">${escapeHtml(res.devToken)}</code>` : '';
+      renderForgotPassword('Se o email existir, voce recebera as instrucoes.' + extra);
+      toast('Solicitacao enviada. Verifique seu email.');
+    } catch (err) {
+      toast(err.message, true);
+      btn.disabled = false;
+    }
+  });
+}
+
+function renderResetPassword(token, errorMsg) {
+  const currentTheme = getTheme();
+  root.innerHTML = `
+    <div class="centered-screen">
+      <button class="top-theme-toggle" id="reset-theme-toggle" title="${currentTheme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}">${currentTheme === 'dark' ? ICONS.sun : ICONS.moon}</button>
+      <div class="login-card">
+        <div class="brand-icon">${ICONS.lock || ICONS.shield}</div>
+        <h1>Nova senha</h1>
+        <p class="subtitle">Escolha uma senha forte para sua conta</p>
+        ${errorMsg ? `<div class="error-msg">${escapeHtml(errorMsg)}</div>` : ''}
+        <form id="reset-form">
+          <div class="form-field">
+            <label>Nova senha *</label>
+            <input type="password" name="password" required minlength="8" autocomplete="new-password" />
+            <div class="password-requirements">
+              <small>Minimo 8 caracteres, 1 maiuscula, 1 minuscula, 1 numero e 1 caractere especial.</small>
+            </div>
+          </div>
+          <div class="form-field">
+            <label>Confirmar senha *</label>
+            <input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-primary">Redefinir senha</button>
+        </form>
+        <div style="text-align:center;margin-top:12px;">
+          <a href="#" id="reset-back-login" style="font-size:13px;">Voltar ao login</a>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('reset-theme-toggle').addEventListener('click', toggleTheme);
+  document.getElementById('reset-back-login').addEventListener('click', (e) => {
+    e.preventDefault();
+    window.history.replaceState({}, document.title, '/');
+    renderLogin();
+  });
+  // Valida o token ao abrir (expirado/invalido volta ao login com aviso).
+  api('GET', '/api/auth/verify-reset-token/' + encodeURIComponent(token)).catch((err) => {
+    window.history.replaceState({}, document.title, '/');
+    renderLogin(err.message || 'Link invalido ou expirado. Solicite novamente.');
+  });
+  document.getElementById('reset-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    if (fd.get('password') !== fd.get('confirmPassword')) {
+      return renderResetPassword(token, 'As senhas nao conferem.');
+    }
+    try {
+      await api('POST', '/api/auth/reset-password', {
+        token,
+        password: fd.get('password'),
+        confirmPassword: fd.get('confirmPassword')
+      });
+      window.history.replaceState({}, document.title, '/');
+      toast('Senha redefinida com sucesso! Faca login.');
+      renderLogin();
+    } catch (err) {
+      renderResetPassword(token, err.message);
+    }
   });
 }
 

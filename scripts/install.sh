@@ -304,6 +304,18 @@ if [ -f "$ENV_FILE" ]; then
   cp "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d-%H%M%S)"
   ok "Backup do .env anterior criado."
 fi
+# Preserva integracoes ja configuradas (Google OAuth, SMTP, URL publica):
+# sem isso, cada reinstall apagava GOOGLE_*/SMTP_* e o login Google +
+# recuperacao de senha por email paravam de funcionar (503).
+PRESERVE_KEYS="GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REDIRECT_URI SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS SMTP_FROM APP_BASE_URL PASSWORD_RESET_EXPIRES_HOURS"
+PRESERVE_BLOCK=""
+for _k in $PRESERVE_KEYS; do
+  _v="$(env_get "$ENV_FILE" "$_k")"
+  if [ -n "$_v" ]; then
+    PRESERVE_BLOCK="${PRESERVE_BLOCK}${_k}=${_v}
+"
+  fi
+done
 info "Gerando arquivo .env ..."
 cat > "$ENV_FILE" <<EOF
 NODE_ENV=production
@@ -321,6 +333,29 @@ BACKUP_INTERVAL_HOURS=6
 BACKUP_MAX_FILES=30
 RLS_ENABLED=true
 EOF
+if [ -n "$PRESERVE_BLOCK" ]; then
+  printf '%s' "$PRESERVE_BLOCK" >> "$ENV_FILE"
+  ok "Integracoes preservadas do .env anterior (Google/SMTP/URL)."
+else
+  cat >> "$ENV_FILE" <<EOF
+# Google OAuth (login "Continuar com Google"): preencha e reinicie.
+# O "Authorized redirect URI" no Google Cloud Console PRECISA ser identico a GOOGLE_REDIRECT_URI.
+# Ex. VPS por IP: GOOGLE_REDIRECT_URI=http://SEU_IP:3000/api/auth/google/callback
+# Ex. dominio:    GOOGLE_REDIRECT_URI=https://seudominio.com/api/auth/google/callback
+#GOOGLE_CLIENT_ID=
+#GOOGLE_CLIENT_SECRET=
+#GOOGLE_REDIRECT_URI=
+# Email p/ recuperacao de senha (forgot-password): sem SMTP o sistema so registra no log.
+#SMTP_HOST=
+#SMTP_PORT=587
+#SMTP_SECURE=false
+#SMTP_USER=
+#SMTP_PASS=
+#SMTP_FROM=
+# URL publica usada nos links de recuperacao de senha (troque pelo IP/dominio real).
+#APP_BASE_URL=http://SEU_IP:3000
+EOF
+fi
 chmod 600 "$ENV_FILE"
 ok ".env criado em $ENV_FILE"
 

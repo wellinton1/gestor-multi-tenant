@@ -264,7 +264,7 @@ app.use((req, res, next) => {
 
 // API routes
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/auth', passwordRecoveryRoutes); // forgot/reset password (sem rate limit extra)
+app.use('/api/auth', authLimiter, passwordRecoveryRoutes); // forgot/reset (com anti-abuso de envio de email)
 
 app.use('/api/2fa', require('./src/middleware/auth').requireLogin, twoFactorRoutes);
 app.use('/api/setup', authLimiter, setupRoutes);
