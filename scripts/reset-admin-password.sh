@@ -51,11 +51,11 @@ if [ -z "${ADMIN_EMAIL:-}" ] && [ "${ASSUME_YES:-0}" != "1" ] && [ -t 0 ]; then
 fi
 [ -n "${ADMIN_EMAIL:-}" ] || { echo "ERRO: informe o email (ADMIN_EMAIL=...)."; exit 1; }
 
-# ---------- existe? ----------
-if ! sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT 1 FROM users WHERE email='$ADMIN_EMAIL'" | grep -q 1; then
+# ---------- existe? (schema: tabelas id + data JSONB; campos dentro de data) ----------
+if ! sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT 1 FROM users WHERE data->>'email'='$ADMIN_EMAIL'" | grep -q 1; then
   echo "ERRO: nenhum usuario com email '$ADMIN_EMAIL' no banco '$DB_NAME'."
   echo "Usuarios admin existentes:"
-  sudo -u postgres psql -d "$DB_NAME" -c "SELECT email FROM users WHERE role='admin';"
+  sudo -u postgres psql -d "$DB_NAME" -c "SELECT data->>'email' AS email FROM users WHERE data->>'role'='admin';"
   exit 1
 fi
 
@@ -88,14 +88,16 @@ HASH="$(sudo -u "$SERVICE_USER" node -e "console.log(require('bcryptjs').hashSyn
 unset NEW_PASSWORD
 
 # 2FA: se o usuario tem 2FA ativo e perdeu o autenticador, limpa para nao travar o login.
-EXTRA_SET=""
+EXTRA_EXPR=""
 if [[ "${DISABLE_2FA:-N}" =~ ^[sS]$ ]]; then
-  EXTRA_SET=', "twoFactorEnabled"=false, "twoFactorSecret"=NULL, "twoFactorBackupCodes"=NULL'
+  EXTRA_EXPR=" - 'twoFactorSecret' - 'twoFactorBackupCodes' || jsonb_build_object('twoFactorEnabled', false)"
 fi
 
+NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 sudo -u postgres psql -d "$DB_NAME" -v ON_ERROR_STOP=1 -q \
-  -c "UPDATE users SET \"passwordHash\"='$HASH', \"passwordChangedAt\"=NOW()$EXTRA_SET WHERE email='$ADMIN_EMAIL';"
+  -c "UPDATE users SET data = ((data - 'passwordHash' - 'passwordChangedAt') || jsonb_build_object('passwordHash', '$HASH', 'passwordChangedAt', '$NOW_ISO')$EXTRA_EXPR) WHERE data->>'email'='$ADMIN_EMAIL';"
 unset HASH
+sudo -u postgres psql -d "$DB_NAME" -tAc "SELECT data->>'email', data->>'passwordChangedAt' FROM users WHERE data->>'email'='$ADMIN_EMAIL';"
 
 echo ""
 echo "[OK] Senha de '$ADMIN_EMAIL' atualizada."
