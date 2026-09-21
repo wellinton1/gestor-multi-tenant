@@ -132,11 +132,15 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Stricter rate limit for login (anti brute-force)
+// Stricter rate limit for login (anti brute-force).
+// So conta POST/PUT/DELETE: os GETs do fluxo normal (abrir a pagina, /me,
+// google-config, /google, /google/callback) NAO gastam o balde — antes cada
+// clique no "Continuar com Google" consumia 2 tentativas e travava em seguida.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: AUTH_RATE_LIMIT_MAX,
-  message: { error: 'Muitas tentativas de login - aguarde 1 minuto.' },
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+  message: { error: 'Muitas tentativas de login - aguarde 15 minutos.' },
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -263,8 +267,9 @@ app.use((req, res, next) => {
 // estar pronto — ver boot() no final do arquivo).
 
 // API routes
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/auth', authLimiter, passwordRecoveryRoutes); // forgot/reset (com anti-abuso de envio de email)
+// Montagem unica: os dois routers no mesmo app.use para o authLimiter contar
+// 1x por request (montar 2x com o mesmo limiter contava 2 tentativas por clique).
+app.use('/api/auth', authLimiter, authRoutes, passwordRecoveryRoutes); // login + forgot/reset
 
 app.use('/api/2fa', require('./src/middleware/auth').requireLogin, twoFactorRoutes);
 app.use('/api/setup', authLimiter, setupRoutes);
