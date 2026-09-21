@@ -219,6 +219,17 @@ chmod 600 "$INSTALL_DIR/.env" 2>/dev/null || true
 chown "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR/.env" 2>/dev/null || true
 ensure_createdb
 
+# Sudoers do terminal da Manutenção (idempotente; libera só diagnósticos + apt).
+SUDOERS_FILE="/etc/sudoers.d/gestor-multi-tenant"
+cat > "$SUDOERS_FILE" <<EOF
+# Gerenciado pelo instalador do gestor-multi-tenant (idempotente).
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /bin/cat /var/log/auth.log*, /usr/bin/cat /var/log/auth.log*, /usr/sbin/ufw status*, /usr/bin/ufw status*, /sbin/iptables -S, /sbin/iptables -L*, /usr/sbin/iptables -S, /usr/sbin/iptables -L*, /usr/bin/apt-get update*, /usr/bin/apt-get upgrade*, /usr/bin/apt list*
+EOF
+chmod 440 "$SUDOERS_FILE"
+if command -v visudo >/dev/null 2>&1; then
+  visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1 && echo "Sudoers do painel validado." || echo "AVISO: regra sudoers inválida."
+fi
+
 echo "Fazendo backup rapido antes de atualizar..."
 bash "$SCRIPT_DIR/backup.sh" "$INSTALL_DIR" "/opt/backups-gestor-multi-tenant" || true
 

@@ -519,6 +519,22 @@ EOF
   ok "Nginx configurado para $DOMAIN_NAME (porta 80 -> app 127.0.0.1:$APP_PORT)."
 fi
 
+# ---------- sudoers (terminal da Manutenção) ----------
+# Libera NOPASSWD só para os comandos de diagnóstico que o painel executa
+# (ss, leitura do auth.log, leitura de ufw/iptables, apt). Sem isso, os botões
+# da Manutenção mostram o comando SSH equivalente para colar.
+SUDOERS_FILE="/etc/sudoers.d/gestor-multi-tenant"
+cat > "$SUDOERS_FILE" <<EOF
+# Gerenciado pelo instalador do gestor-multi-tenant (idempotente).
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /bin/cat /var/log/auth.log*, /usr/bin/cat /var/log/auth.log*, /usr/sbin/ufw status*, /usr/bin/ufw status*, /sbin/iptables -S, /sbin/iptables -L*, /usr/sbin/iptables -S, /usr/sbin/iptables -L*, /usr/bin/apt-get update*, /usr/bin/apt-get upgrade*, /usr/bin/apt list*
+EOF
+chmod 440 "$SUDOERS_FILE"
+if command -v visudo >/dev/null 2>&1 && visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1; then
+  ok "Sudoers do painel validado (botões da Manutenção liberados)."
+else
+  warn "visudo indisponível ou regra inválida — botões da Manutenção vão pedir o comando SSH."
+fi
+
 # ---------- resumo final ----------
 SERVER_IP="$(curl -s -4 --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')"
 echo ""

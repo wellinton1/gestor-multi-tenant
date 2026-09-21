@@ -83,6 +83,7 @@ router.get('/admin-users', (req, res) => {
     allowedEstablishmentIds: u.allowedEstablishmentIds || null,
     passwordChangedAt: u.passwordChangedAt || null,
     twoFactorEnabled: !!u.twoFactorEnabled,
+    googleLinked: !!u.googleId,
     createdAt: u.createdAt
   }));
   res.json(users);

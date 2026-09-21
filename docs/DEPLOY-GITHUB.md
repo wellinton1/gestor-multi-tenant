@@ -115,6 +115,7 @@ sudo bash scripts/setup-nginx.sh  # reconfigurar Nginx / trocar dominio / reemit
 | Login desloga / cookie não fixa | Com HTTPS o `.env` precisa de `COOKIE_SECURE=true` + restart. Com HTTP puro precisa ser `false`. O `setup-nginx.sh` ajusta sozinho no fluxo SSL. |
 | `GOOGLE_REDIRECT_URI` errado | Com domínio use `https://seu.dominio.com/api/auth/google/callback` (idêntico ao Google Cloud Console) e `systemctl restart gestor-multi-tenant` |
 | Backup diário | `crontab -e` (root): `0 3 * * * /usr/bin/bash /root/gestor-multi-tenant/scripts/backup.sh >> /var/log/gestor-backup.log 2>&1` (ajuste o caminho do clone) |
+| Botões da Manutenção pedem comando SSH | Falta o sudoers: rode `sudo bash scripts/install.sh` de novo (idempotente, preserva dados) ou `sudo bash scripts/update.sh` — ambos criam `/etc/sudoers.d/gestor-multi-tenant` |
 
 ## 6. Checklist antes do `git push`
 

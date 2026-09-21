@@ -4005,6 +4005,14 @@ async function renderManutencaoPage() {
     </div>
 
     <div class="card settings-card">
+      <h3>${ICONS.lock} Senhas dos usuários</h3>
+      <p class="cell-muted">Por segurança as senhas são guardadas como hash e <strong>não podem ser vistas</strong> — nem pelo administrador.
+        Aqui você vê o <strong>status de login</strong> de cada usuário e pode <strong>definir uma nova senha</strong> para qualquer um.
+        <a href="#/senhas">Abrir gerenciamento completo</a></p>
+      <div id="maint-users"><div class="loading-state">Carregando usuários...</div></div>
+    </div>
+
+    <div class="card settings-card">
       <h3>${ICONS.archive} Backups</h3>
       <p class="cell-muted">Cópia do site inteiro (.zip com código + banco). O automático roda sozinho
         ${st.backups.autoEnabled ? `a cada ${st.backups.intervalHours}h` : '<strong>pausado</strong>'}
@@ -4058,6 +4066,20 @@ async function renderManutencaoPage() {
       </div>
     </div>
 
+    <div class="card settings-card">
+      <h3>${ICONS.shield} Segurança do servidor</h3>
+      <p class="cell-muted">Diagnóstico da VPS (somente leitura), exceto <strong>Atualizar sistema</strong>, que altera a máquina e pede confirmação.
+        Cada botão roda o comando real e mostra a saída abaixo como num terminal. No Windows, os botões mostram o comando para rodar na VPS.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">
+        <button class="btn btn-secondary" data-sec="ssh">SSH suspeitas</button>
+        <button class="btn btn-secondary" data-sec="ports">Portas abertas</button>
+        <button class="btn btn-secondary" data-sec="firewall">Firewall</button>
+        <button class="btn btn-secondary" data-sec="updates">Atualizações</button>
+        <button class="btn btn-primary" data-sec="upgrade">Atualizar sistema</button>
+      </div>
+      <pre id="sec-term" tabindex="0" aria-label="Terminal de segurança">Clique numa ação acima — a saída aparece aqui como num terminal.</pre>
+    </div>
+
     <div class="card settings-card" style="border-color:#f59e0b;">
       <h3>Zona de atenção: reiniciar</h3>
       <p class="cell-muted">Use quando o painel pedir (ex.: depois de restaurar um backup).
@@ -4077,6 +4099,8 @@ async function renderManutencaoPage() {
   } catch (err) { /* mapa e decorativo: cards continuam funcionando */ }
 
   document.getElementById('maint-refresh').addEventListener('click', renderManutencaoPage);
+  loadMaintUsers();
+  bindSecTerminal();
   document.getElementById('maint-copy-vps').addEventListener('click', (e) => copyCmd(vpsCmds, e.currentTarget));
   document.getElementById('maint-copy-win').addEventListener('click', (e) => copyCmd(winCmds, e.currentTarget));
 
@@ -4137,6 +4161,170 @@ async function renderManutencaoPage() {
     } catch (err) {
       toast('Servidor reiniciando... aguarde e recarregue a página.');
     }
+  });
+}
+
+// ===== Terminal de segurança da Manutenção =====
+// Cada botão roda o diagnóstico real no servidor e revela a saída como num
+// terminal (efeito de digitação). O upgrade roda em background: o terminal
+// acompanha o log com polling até terminar.
+let secUpgradeTimer = null;
+function secTerm() { return document.getElementById('sec-term'); }
+function secScroll() {
+  const t = secTerm();
+  if (t) t.scrollTop = t.scrollHeight;
+}
+function secPrint(text) {
+  const t = secTerm();
+  if (!t) return;
+  t.textContent += text;
+  secScroll();
+}
+function secReveal(fullText) {
+  const t = secTerm();
+  if (!t) return;
+  const start = t.textContent.length;
+  t.textContent += fullText;
+  // revela em fatias para dar a sensação de terminal em tempo real
+  let shown = 0;
+  const step = Math.max(400, Math.ceil(fullText.length / 40));
+  const timer = setInterval(() => {
+    shown += step;
+    if (shown >= fullText.length) {
+      clearInterval(timer);
+      t.textContent = t.textContent.slice(0, start) + fullText;
+    } else {
+      t.textContent = t.textContent.slice(0, start) + fullText.slice(0, shown) + '▌';
+    }
+    secScroll();
+  }, 30);
+}
+async function secRun(kind) {
+  const labels = {
+    ssh: 'Tentativas de login SSH suspeitas',
+    ports: 'Portas abertas (ss)',
+    firewall: 'Regras de firewall (UFW/iptables)',
+    updates: 'Atualizações pendentes do SO'
+  };
+  secPrint('\n$ ' + (labels[kind] || kind) + '\n');
+  try {
+    const r = await api('GET', '/api/maintenance/security/' + kind);
+    secPrint('$ ' + (r.cmd || '') + '\n');
+    secReveal((r.output || '(sem saída)') + '\n');
+  } catch (err) {
+    secPrint('ERRO: ' + err.message + '\n');
+  }
+}
+async function secUpgrade() {
+  if (!window.confirm('Atualizar o sistema operacional agora?\n\nRoda "apt-get update && apt-get upgrade -y" na VPS em segundo plano. Pode levar minutos — não feche esta página até terminar.')) return;
+  if (secUpgradeTimer) return;
+  secPrint('\n$ Atualização do sistema (apt update + upgrade)\n');
+  try {
+    const r = await api('POST', '/api/maintenance/security/upgrade', {});
+    secPrint(r.message + '\n');
+  } catch (err) {
+    secPrint('ERRO: ' + err.message + '\n');
+    return;
+  }
+  let printed = -1;
+  secUpgradeTimer = setInterval(async () => {
+    try {
+      const s = await api('GET', '/api/maintenance/security/upgrade-log');
+      const log = s.log || '';
+      if (printed === -1) {
+        secPrint('--- log ao vivo ---\n');
+        printed = 0;
+      }
+      if (log.length > printed) {
+        secPrint(log.slice(printed));
+        printed = log.length;
+      }
+      if (!s.running) {
+        clearInterval(secUpgradeTimer);
+        secUpgradeTimer = null;
+        secPrint('--- fim (serviço do painel não foi reiniciado; se o kernel atualizou, agende um reboot) ---\n');
+        toast('Atualização do sistema concluída.');
+      }
+    } catch (err) {
+      secPrint('ERRO no polling: ' + err.message + '\n');
+      clearInterval(secUpgradeTimer);
+      secUpgradeTimer = null;
+    }
+  }, 2500);
+}
+function bindSecTerminal() {
+  const t = secTerm();
+  if (!t) return;
+  t.textContent = 'Terminal de segurança pronto. Clique numa ação acima.\n';
+  document.querySelectorAll('[data-sec]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const kind = btn.dataset.sec;
+      if (kind === 'upgrade') secUpgrade();
+      else secRun(kind);
+    });
+  });
+}
+
+// Lista compacta de logins na Manutenção: status + definir nova senha inline.
+// (o campo de nova senha ganha o "olhinho" automaticamente via enhancePasswordFields)
+async function loadMaintUsers() {
+  const box = document.getElementById('maint-users');
+  if (!box) return;
+  box.innerHTML = '<div class="loading-state">Carregando usuários...</div>';
+  let users;
+  try {
+    users = await api('GET', '/api/password/admin-users');
+  } catch (err) {
+    box.innerHTML = `<div class="empty-state">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div style="overflow-x:auto;margin-top:8px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="text-align:left;">
+          <th>Usuário</th><th>Login</th><th>2FA</th><th>Última troca</th><th style="text-align:right;">Ação</th>
+        </tr></thead>
+        <tbody>
+          ${users.map((u) => `
+            <tr data-user-row="${u.id}">
+              <td><strong>${escapeHtml(u.name || '')}</strong><br><span class="cell-muted">${escapeHtml(u.email || '')}</span></td>
+              <td>${u.googleLinked ? '<span class="pill pill-concluido" style="font-size:11px;" title="Entra com o botão Google">Google</span> ' : ''}<span class="pill" style="font-size:11px;" title="Entra com email + senha">Senha</span></td>
+              <td>${u.twoFactorEnabled ? '<span class="pill pill-concluido" style="font-size:11px;">Ativo</span>' : '<span class="cell-muted">—</span>'}</td>
+              <td class="cell-muted">${u.passwordChangedAt ? escapeHtml(formatDateTime(u.passwordChangedAt)) : 'Nunca'}</td>
+              <td style="text-align:right;">
+                <button class="action-btn action-btn-blue" data-maint-pwd="${u.id}" title="Definir nova senha para ${escapeHtml(u.name || u.email || '')}">${ICONS.lock} Nova senha</button>
+              </td>
+            </tr>`).join('') || '<tr><td colspan="5" class="cell-muted">Nenhum usuário.</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+  box.querySelectorAll('[data-maint-pwd]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.maintPwd;
+      const row = box.querySelector(`[data-user-row="${id}"]`);
+      if (!row || row.querySelector('.maint-pwd-form')) return;
+      const cell = row.lastElementChild;
+      cell.innerHTML = `
+        <form class="maint-pwd-form" style="display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap;">
+          <input type="password" name="npwd" required minlength="8" autocomplete="new-password"
+            placeholder="Nova senha (min. 8)" style="max-width:190px;border:1.5px solid var(--input-border);border-radius:8px;padding:7px 10px;font-size:13px;" />
+          <button type="submit" class="action-btn action-btn-blue">Salvar</button>
+          <button type="button" class="action-btn" data-maint-pwd-cancel>X</button>
+        </form>
+        <div class="cell-muted" style="font-size:11px;margin-top:4px;">Min. 8 + maiúscula, minúscula, número e especial</div>`;
+      cell.querySelector('[data-maint-pwd-cancel]').addEventListener('click', loadMaintUsers);
+      cell.querySelector('.maint-pwd-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const newPassword = new FormData(e.target).get('npwd');
+        try {
+          await api('PUT', `/api/password/admin-reset/${id}`, { newPassword });
+          toast('Senha definida com sucesso!');
+          loadMaintUsers();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      });
+    });
   });
 }
 
