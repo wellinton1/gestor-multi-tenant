@@ -4830,4 +4830,49 @@ async function loadSecurityInspection() {
   }
 }
 
+// ===== Mostrar/ocultar senha (botao "olhinho") =====
+// Aplica automaticamente a TODOS os campos type="password" — os que ja estao
+// na tela e os renderizados depois via innerHTML (login, setup, trocar senha,
+// novo usuario, 2FA, API keys). Nao precisa mexer nos formularios: o
+// MutationObserver envolve cada campo novo num .pw-wrap com botao toggle.
+const PW_EYE_OPEN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c1-2.5 5-7 10-7s9 4.5 10 7c-1 2.5-5 7-10 7s-9-4.5-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const PW_EYE_CLOSED = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.5 10.5 0 0112 19c-5 0-9-4.5-10-7 1-2.2 3.7-5 7-6.2M9.9 5.2A10.4 10.4 0 0112 5c5 0 9 4.5 10 7a13.6 13.6 0 01-2.2 3.1M9.9 9.9a3 3 0 004.2 4.2"/><path d="M2 2l20 20"/></svg>';
+function enhanceOnePassword(input) {
+  if (input.dataset.pwToggleDone) return;
+  input.dataset.pwToggleDone = '1';
+  const wrap = document.createElement('span');
+  wrap.className = 'pw-wrap';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pw-toggle';
+  btn.tabIndex = -1;
+  btn.setAttribute('aria-label', 'Mostrar senha');
+  btn.title = 'Mostrar senha';
+  btn.innerHTML = PW_EYE_CLOSED;
+  btn.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? PW_EYE_OPEN : PW_EYE_CLOSED;
+    btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+    btn.title = show ? 'Ocultar senha' : 'Mostrar senha';
+    input.focus();
+  });
+  wrap.appendChild(btn);
+}
+function enhancePasswordFields(scope) {
+  const rootEl = scope && scope.querySelectorAll ? scope : document;
+  if (rootEl.matches && rootEl.matches('input[type="password"]')) enhanceOnePassword(rootEl);
+  rootEl.querySelectorAll('input[type="password"]').forEach(enhanceOnePassword);
+}
+enhancePasswordFields(document);
+new MutationObserver((mutations) => {
+  for (const m of mutations) {
+    m.addedNodes.forEach((n) => {
+      if (n && n.nodeType === 1) enhancePasswordFields(n);
+    });
+  }
+}).observe(document.documentElement, { childList: true, subtree: true });
+
 boot();

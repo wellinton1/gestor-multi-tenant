@@ -69,10 +69,10 @@ const GLOBAL_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 200)
   : (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 1000);
 const AUTH_RATE_LIMIT_MAX = isProduction
-  ? (Number(process.env.RATE_LIMIT_AUTH_MAX) || 10)
+  ? (Number(process.env.RATE_LIMIT_AUTH_MAX) || 7)
   : (Number(process.env.RATE_LIMIT_AUTH_MAX) || 200);
 const PASSWORD_RATE_LIMIT_MAX = isProduction
-  ? (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 3)
+  ? (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 6)
   : (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 50);
 const PORTAL_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_PORTAL_MAX) || 30)
