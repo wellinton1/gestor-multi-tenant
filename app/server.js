@@ -337,12 +337,33 @@ app.use((err, req, res, next) => {
 });
 
 async function startServer() {
+  if (isProduction) {
+    // Producao (VPS/systemd): usa a porta EXATA do .env ou aborta.
+    // Cair para 3001 silenciosamente (fallback de dev) criava 2 processos
+    // (um manual + o do systemd) e o Nginx falava com o processo errado
+    // (ex.: redirect do Google antigo). Segunda instancia morre com erro claro.
+    await new Promise((resolve, reject) => {
+      const server = app.listen(DEFAULT_PORT, () => {
+        console.log(`Servidor rodando em http://localhost:${DEFAULT_PORT}`);
+        console.log('Modo: PRODUCAO (systemd)');
+        resolve();
+      });
+      server.on('error', (err) => {
+        if (err && err.code === 'EADDRINUSE') {
+          console.error(`ERRO FATAL: porta ${DEFAULT_PORT} ja em uso — outro processo do app ja esta rodando.`);
+          console.error(`Descubra com: ss -tlnp | grep ${DEFAULT_PORT}  |  ps aux | grep 'node.*server'`);
+          console.error('Na VPS, use SOMENTE: sudo systemctl restart gestor-multi-tenant (nunca npm start / node server.js manual).');
+          process.exit(1);
+        }
+        reject(err);
+      });
+    });
+    return;
+  }
   const port = await findAvailablePort(DEFAULT_PORT);
   app.listen(port, () => {
     console.log(`Servidor rodando em http://localhost:${port}`);
-    if (!isProduction) {
-      console.log('Modo: DESENVOLVIMENTO');
-    }
+    console.log('Modo: DESENVOLVIMENTO');
   });
 }
 
