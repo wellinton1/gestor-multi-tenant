@@ -88,6 +88,82 @@ router.get('/admin-users', (req, res) => {
   res.json(users);
 });
 
+// Admin: criar novo usuario do sistema
+router.post('/admin-create', (req, res) => {
+  const currentUser = store.findById('users', req.session.userId);
+  if (!currentUser || !isGlobalAdmin(currentUser)) {
+    return res.status(403).json({ error: 'Apenas o administrador da plataforma pode criar usuarios.' });
+  }
+
+  const { name, email, password, role, allowedEstablishmentIds } = req.body || {};
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Nome, email e senha sao obrigatorios.' });
+  }
+  const normalizedEmail = String(email).toLowerCase().trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return res.status(400).json({ error: 'Email invalido.' });
+  }
+  const existing = store.query('users', (u) => String(u.email || '').toLowerCase() === normalizedEmail)[0];
+  if (existing) {
+    return res.status(400).json({ error: 'Email ja cadastrado.' });
+  }
+
+  const strengthErrors = validatePasswordStrength(String(password));
+  if (strengthErrors.length > 0) {
+    return res.status(400).json({ error: strengthErrors.join(' ') });
+  }
+
+  const normalizedRole = role === 'admin' ? 'admin' : 'operator';
+
+  // Define acesso: null = global (somente admin), array = lojas especificas.
+  let ids = null;
+  if (Array.isArray(allowedEstablishmentIds)) {
+    ids = allowedEstablishmentIds.map((id) => String(id));
+  } else if (allowedEstablishmentIds !== null && allowedEstablishmentIds !== undefined) {
+    return res.status(400).json({ error: 'allowedEstablishmentIds deve ser uma lista de IDs ou null (acesso global).' });
+  }
+
+  if (ids === null && normalizedRole !== 'admin') {
+    return res.status(400).json({
+      error: 'Acesso Global e exclusivo para administradores. Marque ao menos 1 estabelecimento para este operador.'
+    });
+  }
+  if (Array.isArray(ids)) {
+    if (normalizedRole !== 'admin' && ids.length === 0) {
+      return res.status(400).json({
+        error: 'Selecione ao menos 1 estabelecimento. Senao o usuario nao conseguira fazer login.'
+      });
+    }
+    // Valida que os IDs existem.
+    const knownIds = new Set(store.all('establishments').map((e) => String(e.id)));
+    const unknown = ids.filter((id) => !knownIds.has(id));
+    if (unknown.length > 0) {
+      return res.status(400).json({ error: 'Estabelecimento(s) invalido(s): ' + unknown.join(', ') });
+    }
+  }
+
+  const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS) || 12;
+  const newUser = store.insert('users', {
+    name: String(name).trim(),
+    email: normalizedEmail,
+    passwordHash: bcrypt.hashSync(String(password), BCRYPT_ROUNDS),
+    role: normalizedRole,
+    allowedEstablishmentIds: ids,
+    passwordChangedAt: null,
+    createdAt: new Date().toISOString()
+  });
+
+  res.status(201).json({
+    id: newUser.id,
+    name: newUser.name,
+    email: newUser.email,
+    role: newUser.role || 'operator',
+    allowedEstablishmentIds: newUser.allowedEstablishmentIds || null,
+    passwordChangedAt: newUser.passwordChangedAt || null,
+    createdAt: newUser.createdAt
+  });
+});
+
 // Admin: excluir usuario
 router.delete('/admin-delete/:userId', (req, res) => {
   const currentUser = store.findById('users', req.session.userId);

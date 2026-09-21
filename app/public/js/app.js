@@ -4208,6 +4208,7 @@ async function renderSenhasPage() {
           <h2>${ICONS.users} Gerenciar Usuarios do Sistema</h2>
           <p>Administre todos os usuarios cadastrados (apenas admin)</p>
         </div>
+        <button class="btn btn-primary" id="new-system-user-btn">${ICONS.plus} Novo Usuario</button>
       </div>
       <div id="admin-users-container"><div class="loading-state">Carregando usuarios...</div></div>
     </div>
@@ -4237,8 +4238,133 @@ async function renderSenhasPage() {
   });
 
   if (currentUser && currentUser.role === 'admin') {
+    const newUserBtn = document.getElementById('new-system-user-btn');
+    if (newUserBtn) newUserBtn.addEventListener('click', openCreateSystemUserModal);
     loadAdminUsers();
   }
+}
+
+function openCreateSystemUserModal() {
+  api('GET', '/api/establishments').then((ests) => {
+    const bodyHtml = `
+      <form id="create-system-user-form">
+        <div class="form-field"><label>Nome *</label><input type="text" name="name" required autocomplete="name" /></div>
+        <div class="form-field"><label>Email *</label><input type="email" name="email" required autocomplete="email" /></div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label>Senha *</label>
+            <input type="password" name="password" required minlength="8" autocomplete="new-password" />
+          </div>
+          <div class="form-field">
+            <label>Perfil</label>
+            <select name="role" id="new-user-role">
+              <option value="operator" selected>Operador</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+        </div>
+        <div class="password-requirements" style="margin-bottom:12px;">
+          <small>Requisitos: minimo 8 caracteres, 1 maiuscula, 1 minuscula, 1 numero, 1 caractere especial</small>
+        </div>
+        <div id="new-user-global-wrap">
+          <label class="associate-global-toggle">
+            <input type="checkbox" id="new-user-global-chk" />
+            <span class="associate-global-track"><span class="associate-global-thumb"></span></span>
+            <span class="associate-global-text">
+              <strong>Acesso Global</strong>
+              <em>Disponivel apenas para administradores. Operadores precisam de ao menos 1 loja.</em>
+            </span>
+          </label>
+        </div>
+        <div class="associate-divider"></div>
+        <div id="new-user-est-container" class="associate-checklist-wrap">
+          <div class="associate-checklist-header">
+            <span>Estabelecimentos permitidos</span>
+            <div class="associate-checklist-actions">
+              <button type="button" class="link-btn" id="new-user-select-all">Selecionar todos</button>
+              <button type="button" class="link-btn" id="new-user-clear-all">Limpar</button>
+            </div>
+          </div>
+          <div class="associate-checklist">
+            ${ests.length === 0 ? '<div class="empty-state">Nenhum estabelecimento cadastrado.</div>' : ests.map((est) => `
+              <label class="associate-est-item">
+                <input type="checkbox" class="est-chk" value="${est.id}" />
+                <div class="associate-est-icon">${est.logoDataUrl ? `<img src="${est.logoDataUrl}"/>` : nicheIcon(est.niche)}</div>
+                <div class="associate-est-info">
+                  <div class="associate-est-name">${escapeHtml(est.name)}</div>
+                  <div class="associate-est-niche">${escapeHtml(est.niche)}</div>
+                </div>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="cancel-create-user">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Criar Usuario</button>
+        </div>
+      </form>
+    `;
+    showModal('Novo Usuario do Sistema', bodyHtml, (overlay) => {
+      const roleSelect = overlay.querySelector('#new-user-role');
+      const globalChk = overlay.querySelector('#new-user-global-chk');
+      const globalWrap = overlay.querySelector('#new-user-global-wrap');
+      const estContainer = overlay.querySelector('#new-user-est-container');
+
+      function refreshVisibility() {
+        const isAdmin = roleSelect.value === 'admin';
+        globalWrap.style.display = isAdmin ? 'block' : 'none';
+        if (!isAdmin && globalChk) globalChk.checked = false;
+        estContainer.style.display = (isAdmin && globalChk && globalChk.checked) ? 'none' : 'block';
+      }
+      function refreshItemStates() {
+        overlay.querySelectorAll('.associate-est-item').forEach((item) => {
+          const chk = item.querySelector('.est-chk');
+          item.classList.toggle('checked', chk.checked);
+        });
+      }
+      roleSelect.addEventListener('change', refreshVisibility);
+      if (globalChk) globalChk.addEventListener('change', refreshVisibility);
+      overlay.querySelector('#new-user-select-all').addEventListener('click', () => {
+        overlay.querySelectorAll('.est-chk').forEach((c) => { c.checked = true; });
+        refreshItemStates();
+      });
+      overlay.querySelector('#new-user-clear-all').addEventListener('click', () => {
+        overlay.querySelectorAll('.est-chk').forEach((c) => { c.checked = false; });
+        refreshItemStates();
+      });
+      overlay.querySelectorAll('.est-chk').forEach((c) => c.addEventListener('change', refreshItemStates));
+      refreshVisibility();
+
+      overlay.querySelector('#cancel-create-user').addEventListener('click', closeModal);
+      overlay.querySelector('#create-system-user-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const role = fd.get('role') === 'admin' ? 'admin' : 'operator';
+        const isGlobal = role === 'admin' && globalChk && globalChk.checked;
+        const allowedEstablishmentIds = isGlobal
+          ? null
+          : Array.from(overlay.querySelectorAll('.est-chk:checked')).map((el) => el.value);
+        if (!isGlobal && (!allowedEstablishmentIds || allowedEstablishmentIds.length === 0)) {
+          toast('Selecione ao menos 1 estabelecimento (ou ative Acesso Global para admin).', true);
+          return;
+        }
+        try {
+          await api('POST', '/api/password/admin-create', {
+            name: fd.get('name'),
+            email: fd.get('email'),
+            password: fd.get('password'),
+            role,
+            allowedEstablishmentIds
+          });
+          closeModal();
+          toast('Usuario criado com sucesso!');
+          loadAdminUsers();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      });
+    });
+  }).catch((err) => toast('Erro ao carregar estabelecimentos: ' + err.message, true));
 }
 
 // Renderiza o card de cadastros pendentes de aprovacao (usuarios que se
