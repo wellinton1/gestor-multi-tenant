@@ -98,6 +98,7 @@ sudo bash scripts/restart.sh    # reiniciar (após editar o .env)
 sudo bash scripts/logs.sh       # logs (Ctrl+C sai)
 sudo bash scripts/backup.sh     # backup (.tar.gz com dump do banco + data/ + .env)
 sudo bash scripts/update.sh     # git pull + deploy preservando dados (rode dentro do clone!)
+sudo bash scripts/reset-admin-password.sh  # trocar senha de um usuario (interativo; DISABLE_2FA=S limpa o 2FA)
 sudo bash scripts/setup-nginx.sh  # reconfigurar Nginx / trocar dominio / reemitir SSL
 ```
 
