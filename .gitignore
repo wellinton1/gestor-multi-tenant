@@ -1,7 +1,11 @@
 # Dependencies
 app/node_modules/
 
-# Environment files (secrets)
+# Environment files (secrets) — raiz e app
+.env
+.env.bak-*
+.env.local
+.env.*.local
 app/.env
 app/.env.local
 app/.env.*.local
@@ -55,6 +59,8 @@ tmp/
 # Backup files
 *.bak
 *.backup
+*.tar.gz
+/opt/backups-gestor-multi-tenant/
 
 # Credentials / secrets files
 senha.txt

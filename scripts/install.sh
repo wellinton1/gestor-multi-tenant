@@ -460,18 +460,37 @@ if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   fi
 fi
 
-# ---------- 11. Nginx opcional ----------
+# ---------- 11. Nginx opcional (delega para scripts/setup-nginx.sh) ----------
 if [[ "$SETUP_NGINX" =~ ^[sS]$ ]]; then
-  info "Instalando e configurando Nginx..."
-  apt-get install -y -qq nginx
-  cat > "/etc/nginx/sites-available/$SERVICE_NAME" <<EOF
+  info "Configurando Nginx (proxy reverso) via scripts/setup-nginx.sh ..."
+  export INSTALL_DIR APP_PORT DOMAIN_NAME ADMIN_EMAIL
+  INSTALL_DIR="$INSTALL_DIR" APP_PORT="$APP_PORT" DOMAIN_NAME="$DOMAIN_NAME" \
+    ADMIN_EMAIL="$ADMIN_EMAIL" SETUP_SSL="${SETUP_SSL:-N}" ASSUME_YES=1 \
+    bash "$SCRIPT_DIR/setup-nginx.sh" || {
+    warn "setup-nginx.sh falhou; tentando configuracao minima inline..."
+    apt-get install -y -qq nginx
+    cat > "/etc/nginx/sites-available/$SERVICE_NAME" <<EOF
+upstream gestor_app {
+    server 127.0.0.1:$APP_PORT;
+    keepalive 32;
+}
 server {
-    listen 80;
-    listen [::]:80;
+    listen 80 default_server;
+    listen [::]:80 default_server;
     server_name $DOMAIN_NAME;
-
+    client_max_body_size 55m;
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss image/svg+xml;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    access_log /var/log/nginx/gestor-multi-tenant-access.log;
+    error_log /var/log/nginx/gestor-multi-tenant-error.log warn;
     location / {
-        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_pass http://gestor_app;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -479,26 +498,25 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
         proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 120s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 120s;
+    }
+    location = /nginx-health {
+        access_log off;
+        default_type text/plain;
+        return 200 'ok';
     }
 }
 EOF
-  ln -sf "/etc/nginx/sites-available/$SERVICE_NAME" "/etc/nginx/sites-enabled/$SERVICE_NAME"
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl restart nginx
-  ok "Nginx configurado para o dominio $DOMAIN_NAME (porta 80)."
-
-  if [[ "$SETUP_SSL" =~ ^[sS]$ ]]; then
-    info "Instalando Certbot e emitindo certificado HTTPS..."
-    apt-get install -y -qq certbot python3-certbot-nginx
-    if certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos -m "$ADMIN_EMAIL" --redirect; then
-      ok "HTTPS configurado para https://$DOMAIN_NAME"
-      sed -i "s/^COOKIE_SECURE=false/COOKIE_SECURE=true/" "$ENV_FILE"
-      systemctl restart "$SERVICE_NAME"
-    else
-      warn "Nao foi possivel emitir o certificado automaticamente. Confira se o dominio ja aponta para o IP desta VPS e tente depois com: certbot --nginx -d $DOMAIN_NAME"
-    fi
-  fi
+    ln -sf "/etc/nginx/sites-available/$SERVICE_NAME" "/etc/nginx/sites-enabled/$SERVICE_NAME"
+    rm -f /etc/nginx/sites-enabled/default
+    nginx -t && systemctl restart nginx
+  }
+  ok "Nginx configurado para $DOMAIN_NAME (porta 80 -> app 127.0.0.1:$APP_PORT)."
 fi
 
 # ---------- resumo final ----------
