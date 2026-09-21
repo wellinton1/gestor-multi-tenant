@@ -4169,6 +4169,20 @@ async function renderManutencaoPage() {
 // terminal (efeito de digitação). O upgrade roda em background: o terminal
 // acompanha o log com polling até terminar.
 let secUpgradeTimer = null;
+let secOSInfo = null;
+async function secLoadOS() {
+  try {
+    secOSInfo = await api('GET', '/api/maintenance/security/os');
+  } catch (e) { secOSInfo = null; }
+  return secOSInfo;
+}
+function secOSLabel() {
+  if (!secOSInfo) return 'SO: não detectado';
+  return 'SO detectado: ' + (secOSInfo.name || secOSInfo.platform)
+    + (secOSInfo.version ? ' ' + secOSInfo.version : '')
+    + (secOSInfo.pkg ? ' · pacotes via ' + secOSInfo.pkg : '')
+    + (secOSInfo.sshLog ? ' · log SSH: ' + secOSInfo.sshLog : '');
+}
 function secTerm() { return document.getElementById('sec-term'); }
 function secScroll() {
   const t = secTerm();
@@ -4209,6 +4223,9 @@ async function secRun(kind) {
   secPrint('\n$ ' + (labels[kind] || kind) + '\n');
   try {
     const r = await api('GET', '/api/maintenance/security/' + kind);
+    if (!r || typeof r.cmd === 'undefined' || typeof r.output === 'undefined') {
+      throw new Error('Backend desatualizado: rode git pull + update.sh na VPS e recarregue.');
+    }
     secPrint('$ ' + (r.cmd || '') + '\n');
     secReveal((r.output || '(sem saída)') + '\n');
   } catch (err) {
@@ -4216,7 +4233,10 @@ async function secRun(kind) {
   }
 }
 async function secUpgrade() {
-  if (!window.confirm('Atualizar o sistema operacional agora?\n\nRoda "apt-get update && apt-get upgrade -y" na VPS em segundo plano. Pode levar minutos — não feche esta página até terminar.')) return;
+  if (!window.confirm('Atualizar o sistema operacional agora?\n\n'
+      + 'SO: ' + (secOSInfo && secOSInfo.name ? secOSInfo.name : 'detectando...')
+      + '\nRoda o upgrade do gerenciador (' + (secOSInfo && secOSInfo.pkg ? secOSInfo.pkg : 'apt/dnf/pacman/apk conforme a distro') + ') na VPS em segundo plano. '
+      + 'Pode levar minutos — não feche esta página até terminar.')) return;
   if (secUpgradeTimer) return;
   secPrint('\n$ Atualização do sistema (apt update + upgrade)\n');
   try {
@@ -4255,7 +4275,13 @@ async function secUpgrade() {
 function bindSecTerminal() {
   const t = secTerm();
   if (!t) return;
-  t.textContent = 'Terminal de segurança pronto. Clique numa ação acima.\n';
+  t.textContent = 'Detectando sistema operacional...\n';
+  secLoadOS().then(() => {
+    const term = secTerm();
+    if (term) {
+      term.textContent = secOSLabel() + '\nClique numa ação acima — a saída aparece aqui como num terminal.\n';
+    }
+  });
   document.querySelectorAll('[data-sec]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const kind = btn.dataset.sec;
