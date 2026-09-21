@@ -69,6 +69,15 @@ if [ -z "${DOMAIN_NAME:-}" ]; then
   fi
 fi
 
+# Sanitiza: aceita com ou sem esquema (http://, https://), com caminho/barra ou porta.
+# Ex.: "http://gestaodeloja.online/" -> "gestaodeloja.online"
+DOMAIN_NAME="${DOMAIN_NAME#http://}"
+DOMAIN_NAME="${DOMAIN_NAME#https://}"
+DOMAIN_NAME="${DOMAIN_NAME%%/*}"
+DOMAIN_NAME="${DOMAIN_NAME%%:*}"
+DOMAIN_NAME="$(printf '%s' "$DOMAIN_NAME" | tr -d '[:space:]')"
+[ -n "$DOMAIN_NAME" ] || DOMAIN_NAME="_"
+
 if [ -z "${SETUP_SSL:-}" ]; then
   if is_ip_or_wildcard "$DOMAIN_NAME"; then
     SETUP_SSL="N"  # Let's Encrypt nao emite para IP puro: pula automaticamente
@@ -111,7 +120,7 @@ render_template() {
   # (caso o script tenha sido copiado sozinho para /opt).
   local domain="$1" port="$2" dest="$3"
   if [ -f "$TEMPLATE" ]; then
-    sed -e "s/__DOMAIN__/$domain/g" -e "s/__APP_PORT__/$port/g" "$TEMPLATE" > "$dest"
+    sed -e "s|__DOMAIN__|$domain|g" -e "s|__APP_PORT__|$port|g" "$TEMPLATE" > "$dest"
   else
     cat > "$dest" <<EOF
 upstream gestor_app {
