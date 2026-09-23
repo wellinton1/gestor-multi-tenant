@@ -119,7 +119,7 @@ async function api(method, path, body) {
   let data = null;
   try { data = await res.json(); } catch (e) { /* no body */ }
   if (!res.ok) {
-    const err = new Error((data && data.error) || 'Erro na requisicao.');
+    const err = new Error((data && data.error) || `Erro na requisicao (HTTP ${res.status}).`);
     err.status = res.status;
     const retryAfter = Number(res.headers.get('Retry-After'));
     if (Number.isFinite(retryAfter) && retryAfter > 0) err.retryAfter = retryAfter;
@@ -4126,11 +4126,26 @@ async function renderManutencaoPage() {
 // acompanha o log com polling até terminar.
 let secUpgradeTimer = null;
 let secOSInfo = null;
+let secBackendOutdated = false;
 async function secLoadOS() {
   try {
     secOSInfo = await api('GET', '/api/maintenance/security/os');
-  } catch (e) { secOSInfo = null; }
+    secBackendOutdated = false;
+  } catch (e) {
+    secOSInfo = null;
+    secBackendOutdated = e.status === 404;
+  }
   return secOSInfo;
+}
+// Backend antigo em memoria (git pull atualiza o frontend do disco na hora, mas
+// as rotas novas so entram quando o servidor reinicia) — mensagem clara.
+function secBackendHint(err) {
+  if (err && err.status === 404) {
+    return 'Backend desatualizado: o codigo novo ja esta no disco, mas o servidor ainda nao reiniciou.\n'
+      + 'Na VPS rode: sudo bash scripts/update.sh   (ou sudo systemctl restart gestor-multi-tenant)\n'
+      + 'e recarregue esta pagina.';
+  }
+  return 'ERRO: ' + (err && err.message ? err.message : 'Falha na requisicao.');
 }
 function secOSLabel() {
   if (!secOSInfo) return 'SO: não detectado';
@@ -4185,7 +4200,7 @@ async function secRun(kind) {
     secPrint('$ ' + (r.cmd || '') + '\n');
     secReveal((r.output || '(sem saída)') + '\n');
   } catch (err) {
-    secPrint('ERRO: ' + err.message + '\n');
+    secPrint(secBackendHint(err) + '\n');
   }
 }
 async function secUpgrade() {
@@ -4199,7 +4214,7 @@ async function secUpgrade() {
     const r = await api('POST', '/api/maintenance/security/upgrade', {});
     secPrint(r.message + '\n');
   } catch (err) {
-    secPrint('ERRO: ' + err.message + '\n');
+    secPrint(secBackendHint(err) + '\n');
     return;
   }
   let printed = -1;
@@ -4234,9 +4249,12 @@ function bindSecTerminal() {
   t.textContent = 'Detectando sistema operacional...\n';
   secLoadOS().then(() => {
     const term = secTerm();
-    if (term) {
-      term.textContent = secOSLabel() + '\nClique numa ação acima — a saída aparece aqui como num terminal.\n';
+    if (!term) return;
+    if (secBackendOutdated) {
+      term.textContent = secBackendHint({ status: 404 }) + '\n';
+      return;
     }
+    term.textContent = secOSLabel() + '\nClique numa ação acima — a saída aparece aqui como num terminal.\n';
   });
   document.querySelectorAll('[data-sec]').forEach((btn) => {
     btn.addEventListener('click', () => {
