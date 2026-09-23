@@ -66,7 +66,7 @@ app.set('trust proxy', 1);
 
 // Rate limit values - configurable via env, stricter defaults in production
 const GLOBAL_RATE_LIMIT_MAX = isProduction
-  ? (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 200)
+  ? (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 600)
   : (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 1000);
 const AUTH_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_AUTH_MAX) || 7)
@@ -122,7 +122,9 @@ app.use(helmet({
   frameguard: { action: 'deny' }
 }));
 
-// Rate limiting global
+// Rate limiting global (somente /api). Paginas e arquivos estaticos NAO contam
+// no balde: antes, um uso normal do painel (HTML + JS + CSS + chamadas de API)
+// consumia o limite e travava o usuario com "Muitas requisicoes deste IP".
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: GLOBAL_RATE_LIMIT_MAX,
@@ -130,7 +132,7 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
-app.use(globalLimiter);
+app.use('/api', globalLimiter);
 
 // Stricter rate limit for login (anti brute-force).
 // So conta POST/PUT/DELETE: os GETs do fluxo normal (abrir a pagina, /me,
