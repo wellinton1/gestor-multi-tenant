@@ -325,12 +325,12 @@ app.get('*', (req, res) => {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0" />
 <meta name="theme-color" content="#ffffff" />
 <title>Painel de Gestao</title>
-<link rel="stylesheet" href="/css/style.css?v=20260922d" nonce="${nonce}" />
-<link rel="stylesheet" href="/themes/tokens-base.css?v=20260922d" nonce="${nonce}" />
+<link rel="stylesheet" href="/css/style.css?v=20260922e" nonce="${nonce}" />
+<link rel="stylesheet" href="/themes/tokens-base.css?v=20260922e" nonce="${nonce}" />
 </head>
 <body>
 <div id="root"></div>
-<script src="/js/app.js?v=20260922d" nonce="${nonce}"></script>
+<script src="/js/app.js?v=20260922e" nonce="${nonce}"></script>
 </body>
 </html>`;
   res.set({

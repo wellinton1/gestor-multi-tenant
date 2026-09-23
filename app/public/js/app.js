@@ -87,13 +87,6 @@ const NICHE_TO_THEME_LEGACY = {
   Outro: 'generico'
 };
 
-// Temas de site disponiveis p/ o seletor (livre para todos).
-const THEME_OPTIONS = [
-  { slug: 'moda', label: 'Moda' },
-  { slug: 'eletronicos', label: 'Eletrônicos' },
-  { slug: 'generico', label: 'Genérico' }
-];
-
 // ---------- state ----------
 let currentUser = null;
 let currentEstablishment = null;
@@ -2403,18 +2396,8 @@ async function renderConfiguracoesPage() {
   const DAY_NAMES = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
   const hours = est.businessHours || {};
   const currentTheme = est.theme || (est.niche ? NICHE_TO_THEME_LEGACY[est.niche] : 'generico');
-  const defaultTheme = est.niche ? (NICHE_TO_THEME_LEGACY[est.niche] || 'generico') : 'generico';
-  const isCustomTheme = currentTheme !== defaultTheme;
-  const currentAccent = est.accentOverride || null;
   const currentPlan = est.plan || 'free';
   const isPro = currentPlan === 'pro';
-  const palette = Array.isArray(est.themePalette) && est.themePalette.length > 0
-    ? est.themePalette
-    : await (async () => { try { const r = await api('GET', `/api/establishments/themes/${encodeURIComponent(currentTheme)}/palette`); return r.palette || []; } catch (e) { return []; } })();
-  // Hex atual: se accentOverride é cor livre (#RRGGBB) usa direto; senão busca na paleta.
-  const currentAccentHex = /^#[0-9a-fA-F]{6}$/.test(currentAccent || '')
-    ? currentAccent
-    : (palette.find((p) => p.name === currentAccent)?.color || '');
 
   mainEl().innerHTML = `
     <div class="page-header">
@@ -2455,75 +2438,6 @@ async function renderConfiguracoesPage() {
           <button type="submit" class="btn btn-primary">Salvar Alteracoes</button>
         </div>
       </form>
-    </div>
-    <div class="card settings-card">
-      <h3 style="margin:0 0 4px 0;font-size:17px;">Aparência</h3>
-      <p style="color:var(--text-muted);font-size:13px;margin:0 0 18px 0;">Personalize a identidade visual do seu site. As cores disponíveis já foram validadas para manter o acabamento premium.</p>
-      <div class="appearance-row">
-        <div class="appearance-label">
-          <strong>Tema do site</strong>
-          <span class="hint">Escolha o visual do seu portal. Livre para todos os planos.</span>
-        </div>
-        <div class="theme-picker">
-          ${THEME_OPTIONS.map((t) => `
-            <button type="button"
-                    class="theme-option ${currentTheme === t.slug ? 'selected' : ''}"
-                    data-theme="${t.slug}"
-                    title="Tema ${escapeHtml(t.label)}">
-              <span class="theme-option-name">${escapeHtml(t.label)}</span>
-              <span class="theme-option-dot" data-dot-for="${t.slug}"></span>
-            </button>
-          `).join('')}
-          <button type="button"
-                  class="theme-reset ${!isCustomTheme ? 'is-default' : ''}"
-                  id="theme-reset-btn"
-                  title="Voltar para o tema padrão (${escapeHtml(defaultTheme)})">
-            ${ICONS.rotateCw || ''} Tema padrão (${escapeHtml(defaultTheme)})
-          </button>
-        </div>
-      </div>
-      <div class="appearance-row">
-        <div class="appearance-label">
-          <strong>Cor de destaque</strong>
-          <span class="hint">Escolha uma cor da paleta que combina com o tema ou personalize com uma cor livre.</span>
-        </div>
-        <div class="accent-editor">
-          <div class="palette-grid" id="palette-grid">
-            ${palette.length === 0 ? '<span class="hint">Paleta indisponível.</span>' : palette.map((p) => `
-              <button type="button"
-                      class="palette-swatch ${currentAccent === p.name ? 'selected' : ''}"
-                      data-name="${escapeHtml(p.name)}"
-                      data-color="${escapeHtml(p.color)}"
-                      title="${escapeHtml(p.name)} (${escapeHtml(p.color)})">
-                <span class="swatch-color" style="background:${escapeHtml(p.color)};"></span>
-                <span class="swatch-label">${escapeHtml(p.name)}</span>
-              </button>
-            `).join('')}
-          </div>
-          <div class="custom-color-row">
-            <div class="custom-color-head">
-              <span class="custom-color-title">Cor livre</span>
-              <span class="hint">Escolha qualquer tom — com aviso de contraste.</span>
-            </div>
-            <div class="custom-color-controls">
-              <label class="color-input-wrap" title="Escolher cor">
-                <input type="color" id="accent-custom-color" value="${escapeHtml(currentAccentHex || '#0d9488')}" />
-                <span class="color-input-dot" id="accent-custom-dot" style="background:${escapeHtml(currentAccentHex || '#0d9488')};"></span>
-              </label>
-              <input type="text" id="accent-custom-hex" value="${escapeHtml(currentAccentHex || '#0d9488')}" placeholder="#RRGGBB" maxlength="7" spellcheck="false" />
-              <button type="button" class="btn btn-secondary" id="accent-custom-apply">Aplicar</button>
-            </div>
-            <div class="contrast-note" id="accent-contrast-note"></div>
-          </div>
-        </div>
-      </div>
-      <div class="appearance-row">
-        <div class="appearance-label">
-          <strong>Pré-visualização</strong>
-          <span class="hint">Veja como fica no seu portal público.</span>
-        </div>
-        <a href="${portalUrl}" target="_blank" rel="noopener" class="btn btn-secondary">${ICONS.globe} Abrir portal</a>
-      </div>
     </div>
     <div class="card settings-card">
       <h3 style="margin:0 0 16px 0;font-size:17px;">Horario de Funcionamento</h3>
@@ -2730,7 +2644,6 @@ async function renderConfiguracoesPage() {
     loadEstablishmentUsers();
   }
   document.getElementById('new-coupon-btn').addEventListener('click', openNewCouponModal);
-  setupAppearanceUI();
   setupBusinessHoursUI();
   loadCoupons();
 }
@@ -3041,151 +2954,6 @@ function setupCouponModal(overlay, coupon) {
     }
   });
 }
-
-// ---------- Aparência (seletor de cor de destaque) ----------
-function setupAppearanceUI() {
-  const paletteGrid = document.getElementById('palette-grid');
-  if (paletteGrid) {
-    paletteGrid.querySelectorAll('.palette-swatch').forEach((sw) => {
-      sw.addEventListener('click', async () => {
-        const name = sw.dataset.name;
-        const color = sw.dataset.color;
-        // Marca visualmente
-        paletteGrid.querySelectorAll('.palette-swatch').forEach((s) => s.classList.remove('selected'));
-        sw.classList.add('selected');
-        // Sincroniza o picker de cor livre com a cor escolhida
-        syncCustomColorUI(color);
-        // Aplica no preview imediato (atualiza a CSS var --accent, etc.)
-        applyAccentColor(color);
-        // Persiste no backend
-        try {
-          currentEstablishment = await api('PUT', `/api/establishments/${currentEstablishment.id}`, { accentOverride: name });
-          toast('Cor de destaque atualizada.');
-        } catch (err) {
-          toast(err.message, true);
-          // Reverte seleção visual
-          paletteGrid.querySelectorAll('.palette-swatch').forEach((s) => s.classList.remove('selected'));
-          const original = currentEstablishment.accentOverride;
-          if (original) paletteGrid.querySelector(`.palette-swatch[data-name="${original}"]`)?.classList.add('selected');
-        }
-      });
-    });
-  }
-
-  // --- Cor livre ---
-  const customColor = document.getElementById('accent-custom-color');
-  const customHex = document.getElementById('accent-custom-hex');
-  const customDot = document.getElementById('accent-custom-dot');
-  const customApply = document.getElementById('accent-custom-apply');
-  const contrastNote = document.getElementById('accent-contrast-note');
-
-  function syncCustomColorUI(hex) {
-    if (!hex) return;
-    if (customColor) customColor.value = hex;
-    if (customHex) customHex.value = hex;
-    if (customDot) customDot.style.background = hex;
-    updateContrastNote(hex);
-  }
-
-  function updateContrastNote(hex) {
-    if (!contrastNote) return;
-    const rgb = hexToRgb(hex);
-    if (!rgb) { contrastNote.innerHTML = ''; contrastNote.className = 'contrast-note'; return; }
-    const [r, g, b] = rgb.split(',').map(Number);
-    // Luminância relativa (WCAG)
-    const lum = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
-    const L = 0.2126 * lum(r) + 0.7152 * lum(g) + 0.0722 * lum(b);
-    const contrast = (L + 0.05) / 0.05; // vs fundo claro (#fff)
-    const good = contrast >= 3;
-    contrastNote.innerHTML = good
-      ? 'Contraste OK para textos e botões.'
-      : 'Tom claro — cuidado com contraste de texto branco. Prefira tons mais escuros.';
-    contrastNote.className = 'contrast-note ' + (good ? 'ok' : 'warn');
-  }
-
-  if (customColor) {
-    customColor.addEventListener('input', () => {
-      syncCustomColorUI(customColor.value);
-    });
-  }
-  if (customHex) {
-    customHex.addEventListener('input', () => {
-      if (customDot && /^#[0-9a-fA-F]{6}$/.test(customHex.value)) {
-        customDot.style.background = customHex.value;
-        updateContrastNote(customHex.value);
-      }
-    });
-    customHex.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); customApply && customApply.click(); }
-    });
-  }
-  if (customApply) {
-    customApply.addEventListener('click', async () => {
-      let hex = (customHex ? customHex.value : '').trim().toLowerCase();
-      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
-        toast('Cor invalida. Use o formato #RRGGBB (ex.: #ff6b35).', true);
-        return;
-      }
-      hex = hex.toLowerCase();
-      // Desmarca seleção da paleta e marca o picker como ativo
-      paletteGrid && paletteGrid.querySelectorAll('.palette-swatch').forEach((s) => s.classList.remove('selected'));
-      applyAccentColor(hex);
-      syncCustomColorUI(hex);
-      try {
-        currentEstablishment = await api('PUT', `/api/establishments/${currentEstablishment.id}`, { accentOverride: hex });
-        toast('Cor de destaque personalizada aplicada.');
-      } catch (err) {
-        toast(err.message, true);
-      }
-    });
-  }
-
-  // --- Seletor de tema do site (livre para todos) ---
-  const themeOptions = document.querySelectorAll('.theme-option');
-  const themeResetBtn = document.getElementById('theme-reset-btn');
-
-  function saveTheme(slug) {
-    return api('PUT', `/api/establishments/${currentEstablishment.id}`, { theme: slug });
-  }
-  function markThemeSelected(slug) {
-    themeOptions.forEach((opt) => opt.classList.toggle('selected', opt.dataset.theme === slug));
-  }
-
-  themeOptions.forEach((opt) => {
-    opt.addEventListener('click', async () => {
-      const slug = opt.dataset.theme;
-      markThemeSelected(slug);
-      try {
-        currentEstablishment = await saveTheme(slug);
-        applyEstablishmentTheme(currentEstablishment);
-        toast('Tema atualizado.');
-        // Re-renderiza p/ atualizar paleta de cores conforme o novo tema.
-        renderConfiguracoesPage();
-      } catch (err) {
-        toast(err.message, true);
-        renderConfiguracoesPage();
-      }
-    });
-  });
-
-  if (themeResetBtn) {
-    themeResetBtn.addEventListener('click', async () => {
-      // Tema padrão = derivado do nicho (pode mudar se o nicho mudou).
-      const defaultSlug = (currentEstablishment && currentEstablishment.niche
-        ? (NICHE_TO_THEME_LEGACY[currentEstablishment.niche] || 'generico')
-        : 'generico');
-      try {
-        currentEstablishment = await saveTheme(defaultSlug);
-        markThemeSelected(defaultSlug);
-        applyEstablishmentTheme(currentEstablishment);
-        toast(`Tema padrão (${defaultSlug}) restaurado.`);
-      } catch (err) {
-        toast(err.message, true);
-      }
-    });
-  }
-
-  }
 
 function setupBusinessHoursUI() {
   const grid = document.getElementById('business-hours-grid');
