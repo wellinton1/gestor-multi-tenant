@@ -3057,3 +3057,343 @@ select.status-select {
   color: var(--text-muted);
   margin: 0;
 }
+
+/* ============================================================================
+   MOBILE OPTIMIZATION — modern app-like experience
+   ============================================================================ */
+
+/* ---------- CSS Variables for Mobile Breakpoints ---------- */
+:root {
+  /* Mobile breakpoint thresholds (px) — mobile-first approach */
+  --bp-xsmall: 320px;   /* smallest phones */
+  --bp-small: 360px;    /* typical small phones */
+  --bp-medium: 375px;   /* iPhone SE/13 mini */
+  --bp-large: 390px;    /* iPhone 13/14 Pro */
+  --bp-xlarge: 393px;   /* iPhone 13 Pro Max/14 Plus */
+  --bp-huge: 430px;     /* Pixel 7 Pro/large phones */
+}
+
+/* ============================================================================
+   MOBILE FIRST RESPONSIVE — modern app-like experience
+   Usa clamp(), container-like queries, safe-area-inset, dvh/svh/lvh
+   ============================================================================ */
+
+/* ---------- Better viewport ---------- */
+html {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+*, *::before, *::after { box-sizing: inherit; }
+
+/* ---------- Viewport height units ----------*/
+/* 100dvH = dynamic (account for address bar hide/show)
+   100svH = small (always fits small viewport)
+   100lH = large (always fits large viewport) */
+@supports (height: 100dvH) {
+  .vh { height: 100dvH; }
+}
+@supports (height: 100svh) {
+  .vh { height: 100svh; }
+}
+@supports (height: 100lvh) {
+  .vh { height: 100lvh; }
+}
+
+/* ---------- Safe area insets (iPhone notch/Dynamic Island) ----------*/
+/* Usa env() com fallback 0 para compatibilidade */
+.safe-area-padding {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------- Container-like queries using media ----------*/
+/* These work as component-level responsive rules */
+@media (container-type: inline-size) {
+  .container-responsive {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* ---------- Responsive typography with clamp() ----------*/
+/* Mobile-first: base sizes scale fluidly between breakpoints */
+html { font-size: clamp(14px, 0.5vw + 13px, 16px); }
+
+h1 { font-size: clamp(24px, 4vw + 16px, 40px); }
+h2 { font-size: clamp(20px, 3vw + 14px, 32px); }
+h3 { font-size: clamp(18px, 2.5vw + 12px, 24px); }
+h4 { font-size: clamp(16px, 2vw + 11px, 20px); }
+h5 { font-size: clamp(14px, 1.5vw + 10px, 16px); }
+h6 { font-size: clamp(13px, 1.2vw + 9px, 14px); }
+
+.body-text { font-size: clamp(14px, 0.5vw + 13px, 16px); }
+.caption { font-size: clamp(11px, 0.4vw + 10px, 13px); }
+.button-text { font-size: clamp(13px, 0.8vw + 11px, 15px); }
+
+/* ---------- Touch target improvements ----------*/
+/* Minimize 44-48px touch targets */
+.btn, .nav-item, .access-link, .tenant-card, .stat-card, .service-card,
+.service-option, .portal-service-option, .time-slot-btn, .time-slot-btn:hover,
+.whatsapp-link, .maps-link, .portal-contact-link, .role-badge, .pill,
+.category-tag, .niche-option, .niche-selector-grid .niche-option,
+.selector-actions .btn, .selector-actions .btn:hover,
+.tenant-actions .btn, .tenant-actions .btn-icon,
+.modal-close, .associate-checklist .associate-est-item,
+.avitar-dot, .bottom-book-btn, .bottom-summary span,
+.qty-btn, .portal-summary-controls span {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Extra padding for inputs and select elements */
+input, select, textarea { min-height: 48px; padding: 10px; }
+
+/* ---------- Buttons with touch feedback ----------*/
+.btn:focus-visible, .nav-item:focus-visible, .modal-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* Active state for touch devices */
+.btn:active, .nav-item:active, .time-slot-btn:active,
+.qty-btn:active, .portal-submit:active { transform: scale(0.98); }
+
+/* ---------- Grid systems mobile-first ----------*/
+/* Fluid grid using minmax - reduces need for breakpoints */
+.stat-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.services-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.selector-grid { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.services-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+/* 2-column grid from 576px, 3-column from 768px */
+@media (min-width: 320px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+@media (min-width: 360px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } }
+@media (min-width: 375px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
+@media (min-width: 390px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
+@media (min-width: 393px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); } }
+@media (min-width: 430px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); } }
+
+/* ---------- Sidebar mobile ----------*/
+@media (max-width: 768px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100%; min-width: 0; height: auto; position: static; 
+    border-bottom: 1px solid var(--border); transform: translateX(0); }
+  .sidebar-brand { padding: 12px 16px 16px; }
+  .sidebar-nav { flex-direction: row; flex-wrap: wrap; justify-content: center; 
+    gap: 4px 12px; padding: 12px 0; }
+  .nav-item { width: auto; padding: 8px 12px; font-size: 13px; }
+  .nav-item .ic { display: none; }
+  .main { padding: 16px; }
+  
+  /* Hide admin-only nav items on mobile for regular users */
+  .nav-item.admin-only { display: none; }
+}
+
+/* ---------- Tables horizontal scroll ----------*/
+/* Tables scroll horizontally on narrow screens */
+.card > table { min-width: 480px; overflow-x: auto;
+  -webkit-overflow-scrolling: touch; }
+.card > table::-webkit-scrollbar { height: 4px; }
+.card > table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+
+/* Make table cells expand to fill width */
+.cell-strong, .cell-muted { min-width: 0; flex: 1 0 33.333%; }
+.actions-cell { justify-content: flex-start; }
+
+/* ---------- Forms inputs mobile ----------*/
+input, select, textarea { 
+  font-size: var(--fs-mobile-small); 
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  width: 100%;
+}
+
+//* ---------- Modals with safe-area ----------*/
+.modal-overlay { 
+  padding: calc(env(safe-area-inset-top, 0px) + 20px) 
+             calc(env(safe-area-inset-left, 0px) + 20px) 
+             calc(env(safe-area-inset-bottom, 0px) + 20px) 
+             calc(env(safe-area-inset-right, 0px) + 20px); 
+  inset: 0;
+}
+.modal { 
+  margin: calc(env(safe-area-inset-top, 0px) + 16px) 
+           calc(env(safe-area-inset-left, 0px) + 16px) 
+           calc(env(safe-area-inset-bottom, 0px) + 16px) 
+           calc(env(safe-area-inset-right, 0px) + 16px);
+  max-height: calc(100dvH - (env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)) - 32px);
+}
+
+/* ---------- Specific mobile breakpoints ----------*/
+/* Targeting the exact device sizes mentioned in the requirements */
+@media (max-width: 320px) {
+  .mobile-320 { padding: 12px; }
+  .mobile-320 h1 { font-size: clamp(20px, 4vw + 12px, 32px); }
+  .mobile-320 .btn { padding: 10px 16px; font-size: 13px; }
+}
+
+@media (max-width: 360px) {
+  .mobile-360 { padding: 12px 8px; }
+  .mobile-360 h1 { font-size: clamp(20px, 4vw + 12px, 34px); }
+  .mobile-360 .btn { padding: 10px 14px; font-size: 13px; }
+}
+
+@media (max-width: 375px) { /* iPhone SE/13 mini */
+  .mobile-375 { padding: 12px 8px; }
+  .mobile-375 h1 { font-size: clamp(22px, 4vw + 14px, 36px); }
+  .mobile-375 .btn { padding: 11px 16px; font-size: 13.5px; }
+}
+
+@media (max-width: 390px) { /* iPhone 13/14 Pro */
+  .mobile-390 { padding: 12px 8px; }
+  .mobile-390 h1 { font-size: clamp(24px, 4vw + 16px, 38px); }
+  .mobile-390 .btn { padding: 12px 16px; font-size: 14px; }
+}
+
+@media (max-width: 393px) { /* iPhone 13 Pro Max/14 Plus */
+  .mobile-393 { padding: 12px 8px; }
+  .mobile-393 h1 { font-size: clamp(24px, 4vw + 16px, 38px); }
+  .mobile-393 .btn { padding: 12px 16px; font-size: 14px; }
+}
+
+@media (max-width: 430px) { /* Pixel 7 Pro/large phones */
+  .mobile-430 { padding: 16px 12px; }
+  .mobile-430 h1 { font-size: clamp(26px, 4vw + 18px, 42px); }
+  .mobile-430 .btn { padding: 13px 18px; font-size: 14px; }
+}
+
+/* ---------- Portal specific mobile adjustments ----------*/
+@media (max-width: 768px) {
+  .portal-hero { padding: 48px 16px 64px; }
+  .portal-hero h1 { font-size: clamp(24px, 3vw + 20px, 32px); }
+  .portal-body { padding: 0 16px 80px; }
+  .portal-services-grid { grid-template-columns: 1fr; padding: 16px; }
+  .portal-card .card-header { padding: 16px 16px 8px; }
+  .portal-description { padding: 4px 16px 0; }
+  .portal-summary { margin: 12px 12px; padding: 12px; }
+  .portal-bottom-bar { padding: 12px 16px; }
+  .bottom-book-btn { min-width: 140px; padding: 12px 16px; font-size: 14px; }
+  .portal-contact { gap: 8px; }
+  .portal-contact span { font-size: 12px; padding: 6px 10px; }
+  .portal-summary-controls { gap: 4px; }
+  .portal-summary-controls span { font-size: 13px; min-width: 18px; }
+  .portal-total { font-size: 13px; }
+  .portal-total strong { font-size: 18px; }
+  
+  /* Modais do portal */
+  .modal { max-width: 90%; margin: 16px; padding: 20px; }
+  .modal-overlay { padding: 16px; }
+  .time-slot-btn { padding: 8px 4px; font-size: 12px; }
+  .portal-submit { padding: 14px; font-size: 14px; }
+}
+
+/* ---------- App shell mobile ----------*/
+@media (max-width: 768px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { 
+    position: fixed; 
+    top: 0; left: -100%; 
+    width: 75%; 
+    max-width: 280px; 
+    height: 100dvH; 
+    z-index: 100; 
+    transition: left var(--transition) cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: left;
+    border-right: 1px solid var(--border);
+    /* sombra suave p/ dar sensação de profundidade */
+    box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+  }
+  .sidebar.open { left: 0; }
+  .sidebar-brand { padding: 12px 16px 16px; }
+  .sidebar-nav { 
+    flex-direction: column; 
+    padding: 12px 0; 
+  }
+  .nav-item { width: 100%; padding: 10px 14px; border-bottom: 1px solid var(--sidebar-border); }
+  .nav-item:last-child { border-bottom: none; }
+  .main { padding: 16px 0 0; }
+}
+
+/* Overlay quando sidebar aberta */
+.overlay-bg { 
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99;
+  opacity: 0; visibility: hidden; transition: opacity var(--transition);
+}
+.overlay-bg.open { opacity: 1; visibility: visible; }
+
+/* ---------- Reduced motion ----------*/
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .btn:active { transform: none; }
+}
+
+/* ---------- Focus visible ----------*/
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* ---------- Touch animation light ----------*/
+/* Leve feedback visual quando o usuário toca */
+.touch-feedback { 
+  transition: background 0.1s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: rgba(0,0,0,0.04);
+}
+
+/* ---------- Image responsiveness ----------*/
+img { max-width: 100%; height: auto; width: 100%; }
+picture > img { display: block; }
+
+/* ---------- Reduced padding on mobile ----------*/
+@media (max-width: 768px) {
+  .padding-mobile { padding-left: 16px; padding-right: 16px; }
+  .padding-mobile-xsmall { padding-left: 12px; padding-right: 12px; }
+  .padding-mobile-xxsmall { padding-left: 8px; padding-right: 8px; }
+}
+
+/* ---------- Specific element adjustments ----------*/
+/* Header mobile */
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .page-header p { margin-top: 8px; }
+}
+
+/* Cards mobile */
+@media (max-width: 768px) {
+  .stat-card, .service-card, .portal-service-option { 
+    padding: 16px; 
+    margin-bottom: 12px; 
+  }
+  .stat-card .stat-value { font-size: var(--fs-mobile-body); }
+}
+
+/* Dropdown mobile */
+@media (max-width: 768px) {
+  .dropdown { width: 100%; }
+  .dropdown-btn { width: 100%; justify-content: center; padding: 12px; font-size: 14px; }
+}
+
+/* ---------- Avatar e ícones ----------*/
+@media (max-width: 768px) {
+  .avatar-dot { width: 32px; height: 32px; font-size: 12px; }
+  .brand-icon { width: 36px; height: 36px; font-size: 14px; }
+}
+
+/* ---------- Progress bars ----------*/
+.progress-bar { height: 8px; border-radius: 999px; }
+.progress-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+
+/* ---------- Empty state mobile ----------*/
+.empty-state { padding: 40px 20px; font-size: var(--fs-mobile-body); }
+
+/* ---------- Loading state mobile ----------*/
+.loading-state { padding: 40px 20px; font-size: var(--fs-mobile-body); }
+<tool_call>
+<function=read>
+<parameter=filePath>
+C:\Users\wellington\Desktop\gestor-multi-tenant\app\style.css
