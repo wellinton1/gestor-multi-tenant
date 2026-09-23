@@ -303,17 +303,25 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 // Public client-booking page (clean URL, no admin auth required)
 // Formatos: /nome-da-loja/:establishmentId (novo) e /loja/:id (legado)
+// O 2o segmento precisa ser UUID (ids sao uuid v4): sem isso, qualquer caminho
+// de 2 segmentos (ex.: /reset-password/...) cairia no portal em vez do admin.
+const PORTAL_RESERVED_SLUGS = new Set(['api', 'css', 'js', 'themes', 'manifest.webmanifest', 'favicon.ico', 'loja', 'reset-password']);
+const PORTAL_UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 function servePortalPage(req, res) {
   res.sendFile(path.join(__dirname, 'public', 'portal.html'), {
     headers: {
       'X-Frame-Options': 'DENY',
-      'X-Content-Type-Options': 'nosniff'
+      'X-Content-Type-Options': 'nosniff',
+      // O shell do portal e minusculo e muda a cada deploy: nunca cachear,
+      // senao o cliente pode receber HTML antigo (ou o admin) do cache.
+      'Cache-Control': 'no-store'
     }
   });
 }
 app.get('/loja/:establishmentId', servePortalPage);
 app.get('/:storeSlug/:establishmentId', (req, res, next) => {
-  if (req.params.storeSlug === 'api') return next();
+  if (PORTAL_RESERVED_SLUGS.has(req.params.storeSlug)) return next();
+  if (!PORTAL_UUID_RE.test(req.params.establishmentId || '')) return next();
   return servePortalPage(req, res);
 });
 
@@ -327,12 +335,12 @@ app.get('*', (req, res) => {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0" />
 <meta name="theme-color" content="#ffffff" />
 <title>Painel de Gestao</title>
-<link rel="stylesheet" href="/css/style.css?v=20260922g" nonce="${nonce}" />
-<link rel="stylesheet" href="/themes/tokens-base.css?v=20260922g" nonce="${nonce}" />
+<link rel="stylesheet" href="/css/style.css?v=20260923a" nonce="${nonce}" />
+<link rel="stylesheet" href="/themes/tokens-base.css?v=20260923a" nonce="${nonce}" />
 </head>
 <body>
 <div id="root"></div>
-<script src="/js/app.js?v=20260922g" nonce="${nonce}"></script>
+<script src="/js/app.js?v=20260923a" nonce="${nonce}"></script>
 </body>
 </html>`;
   res.set({

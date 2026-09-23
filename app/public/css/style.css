@@ -3208,3 +3208,198 @@ select.status-select {
   .login-card { padding: 24px; }
   .btn-google { font-size: 13.5px; padding: 10px 12px; }
 }
+
+/* ============================================================================
+   MOBILE APP-LIKE — otimização mobile (somente mobile; desktop intacto)
+   clamp() · safe-area-inset (notch/Dynamic Island) · dvh/svh/lvh · alvos 44px
+   Tudo que altera seletores existentes esta dentro de @media (max-width).
+   ============================================================================ */
+
+:root {
+  --fs-mobile-body: clamp(14px, 0.5vw + 13.5px, 16px);
+  --fs-mobile-heading: clamp(20px, 2vw + 18px, 32px);
+  --fs-mobile-button: clamp(14px, 1vw + 13px, 16px);
+  --fs-mobile-small: clamp(12px, 0.8vw + 11px, 14px);
+}
+
+html { -webkit-tap-highlight-color: transparent; }
+
+/* Alturas de viewport dinamica (barra de endereco some/aparece) */
+@supports (height: 100dvh) { .vh { height: 100dvh; } }
+@supports (height: 100svh) { .vh { height: 100svh; } }
+@supports (height: 100lvh) { .vh { height: 100lvh; } }
+
+/* Safe area do iPhone (notch/Dynamic Island) */
+.safe-area-padding {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Overlay do drawer mobile */
+.overlay-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 99;
+  opacity: 0; visibility: hidden; transition: opacity var(--transition);
+}
+.overlay-bg.open { opacity: 1; visibility: visible; }
+
+/* Feedback leve ao tocar */
+.touch-feedback {
+  transition: background 0.1s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: rgba(0,0,0,0.04);
+}
+
+/* Barra de progresso */
+.progress-bar { height: 8px; border-radius: 999px; }
+.progress-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+
+/* Helpers de padding mobile (classes novas, sem efeito no desktop) */
+@media (max-width: 768px) {
+  .padding-mobile { padding-left: 16px; padding-right: 16px; }
+  .padding-mobile-xsmall { padding-left: 12px; padding-right: 12px; }
+  .padding-mobile-xxsmall { padding-left: 8px; padding-right: 8px; }
+}
+
+/* ---------- Grade fluida mobile (2 colunas conforme a largura) ---------- */
+@media (min-width: 320px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+@media (min-width: 360px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } }
+@media (min-width: 375px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
+@media (min-width: 390px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
+@media (min-width: 393px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); } }
+@media (min-width: 430px) { .grid-col2 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); } }
+
+/* ---------- Tipografia fluida (somente mobile) ---------- */
+@media (max-width: 768px) {
+  html { font-size: clamp(14px, 0.5vw + 13px, 16px); }
+  h1 { font-size: clamp(24px, 4vw + 16px, 40px); }
+  h2 { font-size: clamp(20px, 3vw + 14px, 32px); }
+  h3 { font-size: clamp(18px, 2.5vw + 12px, 24px); }
+  h4 { font-size: clamp(16px, 2vw + 11px, 20px); }
+  h5 { font-size: clamp(14px, 1.5vw + 10px, 16px); }
+  h6 { font-size: clamp(13px, 1.2vw + 9px, 14px); }
+}
+
+/* ---------- Alvos de toque 44-48px (somente mobile) ---------- */
+@media (max-width: 768px) {
+  .btn, .nav-item, .access-link, .tenant-card, .stat-card, .service-card,
+  .portal-service-option, .time-slot-btn,
+  .whatsapp-link, .maps-link, .portal-contact-link, .role-badge, .pill,
+  .category-tag, .niche-option,
+  .selector-actions .btn, .tenant-actions .btn, .tenant-actions .btn-icon,
+  .modal-close, .associate-checklist .associate-est-item,
+  .bottom-book-btn, .qty-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input, select, textarea {
+    min-height: 48px;
+    padding: 12px 14px;
+    width: 100%;
+    font-size: var(--fs-mobile-small);
+    border-radius: var(--radius-lg);
+  }
+}
+
+/* Feedback de toque (só em dispositivo sem hover: Android/iPhone) */
+@media (hover: none) {
+  .btn:active, .nav-item:active, .time-slot-btn:active,
+  .qty-btn:active, .portal-submit:active { transform: scale(0.98); }
+}
+
+/* ---------- Sidebar drawer mobile ---------- */
+@media (max-width: 768px) {
+  .app-shell { flex-direction: column; }
+  .sidebar {
+    position: fixed;
+    top: 0; left: -100%;
+    width: 75%;
+    max-width: 280px;
+    height: 100dvh;
+    z-index: 100;
+    transition: left var(--transition) cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: left;
+    border-right: 1px solid var(--border);
+    box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+  }
+  .sidebar.open { left: 0; }
+  .sidebar-brand { padding: 12px 16px 16px; }
+  .sidebar-nav { flex-direction: column; padding: 12px 0; }
+  .nav-item { width: 100%; padding: 10px 14px; border-bottom: 1px solid var(--sidebar-border); }
+  .nav-item:last-child { border-bottom: none; }
+  .main { padding: 16px 0 0; }
+}
+
+/* ---------- Tabelas: rolagem horizontal suave ---------- */
+.card > table { -webkit-overflow-scrolling: touch; }
+.card > table::-webkit-scrollbar { height: 4px; }
+.card > table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+
+/* ---------- Modais respeitando safe-area e teclado ---------- */
+.modal-overlay {
+  padding: calc(env(safe-area-inset-top, 0px) + 20px)
+           calc(env(safe-area-inset-left, 0px) + 20px)
+           calc(env(safe-area-inset-bottom, 0px) + 20px)
+           calc(env(safe-area-inset-right, 0px) + 20px);
+}
+@media (max-width: 768px) {
+  .modal {
+    margin: calc(env(safe-area-inset-top, 0px) + 16px)
+            calc(env(safe-area-inset-left, 0px) + 16px)
+            calc(env(safe-area-inset-bottom, 0px) + 16px)
+            calc(env(safe-area-inset-right, 0px) + 16px);
+    max-height: calc(100dvh - (env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)) - 32px);
+  }
+}
+
+/* ---------- Ajustes finos por aparelho ---------- */
+@media (max-width: 320px) {
+  .page-header h1 { font-size: clamp(20px, 4vw + 12px, 32px); }
+  .btn { padding: 10px 16px; font-size: 13px; }
+}
+@media (max-width: 360px) {
+  .btn { padding: 10px 14px; font-size: 13px; }
+}
+@media (max-width: 375px) { /* iPhone SE/13 mini */
+  .btn { padding: 11px 16px; font-size: 13.5px; }
+}
+@media (max-width: 390px) { /* iPhone 13/14 Pro */
+  .btn { padding: 12px 16px; font-size: 14px; }
+}
+@media (max-width: 393px) { /* iPhone 13 Pro Max/14 Plus */
+  .btn { padding: 12px 16px; font-size: 14px; }
+}
+@media (max-width: 430px) { /* Pixel 7 Pro / grandes */
+  .btn { padding: 13px 18px; font-size: 14px; }
+}
+
+/* ---------- Portal do cliente no mobile ---------- */
+@media (max-width: 768px) {
+  .portal-hero { padding: 48px 16px 64px; }
+  .portal-hero h1 { font-size: clamp(24px, 3vw + 20px, 32px); }
+  .portal-body { padding: 0 16px 80px; }
+  .portal-services-grid { grid-template-columns: 1fr; padding: 16px; }
+  .portal-card .card-header { padding: 16px 16px 8px; }
+  .portal-description { padding: 4px 16px 0; }
+  .portal-summary { margin: 12px; padding: 12px; }
+  .portal-bottom-bar {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .bottom-book-btn { min-width: 140px; padding: 12px 16px; font-size: 14px; }
+  .portal-contact { gap: 8px; }
+  .portal-contact span { font-size: 12px; padding: 6px 10px; }
+  .modal { max-width: 90%; padding: 20px; }
+  .time-slot-btn { padding: 8px 4px; font-size: 12px; }
+  .portal-submit { padding: 14px; font-size: 14px; }
+}
+
+/* ---------- Cabecalho, cards, avatares e imagens no mobile ---------- */
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .page-header p { margin-top: 8px; }
+  .stat-card, .service-card, .portal-service-option { padding: 16px; margin-bottom: 12px; }
+  .stat-card .stat-value { font-size: var(--fs-mobile-body); }
+  .avatar-dot { width: 32px; height: 32px; font-size: 12px; }
+  .brand-icon { width: 36px; height: 36px; font-size: 14px; }
+  img { max-width: 100%; height: auto; }
+  .empty-state { padding: 40px 20px; font-size: var(--fs-mobile-body); }
+  .loading-state { padding: 40px 20px; font-size: var(--fs-mobile-body); }
+}

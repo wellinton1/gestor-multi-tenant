@@ -2,6 +2,22 @@
 
 const root = document.getElementById('root');
 
+// Guarda anti-confusao portal x admin: se este bundle carregar num caminho de
+// portal (ex.: /pizza-boa/<uuid>#/dashboard vindo de cache, PWA ou deploy
+// antigo), recarrega SEM hash no caminho limpo para o portal abrir em vez do
+// dashboard. Sem loop: apos o replace nao ha hash e o pathname ja esta limpo.
+(function redirectPortalPath() {
+  try {
+    var parts = location.pathname.split('/').filter(Boolean);
+    var uuidRe = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    var isPortal = parts.length === 2 && (parts[0] === 'loja' || uuidRe.test(parts[1]));
+    if (isPortal) {
+      var clean = '/' + parts[0] + '/' + parts[1];
+      if (location.pathname !== clean || location.hash) location.replace(clean);
+    }
+  } catch (e) { /* ignore */ }
+})();
+
 const ICONS = {
   dashboard: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>',
   clipboard: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 011-1h4a1 1 0 011 1v1"/><path d="M9 11h6M9 15h6"/></svg>',
@@ -2544,7 +2560,8 @@ async function renderConfiguracoesPage() {
       </div>
       <div class="portal-link-box">
         <input type="text" readonly value="${portalUrl}" id="portal-url-input" />
-        <button class="btn btn-secondary" id="open-portal-btn">${ICONS.globe} Abrir</button>
+        <a class="btn btn-secondary" id="open-portal-btn" href="${portalUrl}" target="_blank" rel="noopener">${ICONS.globe} Abrir</a>
+        <button type="button" class="btn btn-secondary" id="copy-portal-btn">Copiar</button>
       </div>
     </div>
     <div class="card settings-card">
@@ -2605,7 +2622,21 @@ async function renderConfiguracoesPage() {
     </div>
     ` : ''}
   `;
-  document.getElementById('open-portal-btn').addEventListener('click', () => window.open(portalUrl, '_blank'));
+  document.getElementById('copy-portal-btn').addEventListener('click', async () => {
+    const input = document.getElementById('portal-url-input');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(portalUrl);
+      } else {
+        input.select();
+        document.execCommand('copy');
+      }
+      toast('Link do portal copiado.');
+    } catch (e) {
+      try { input.select(); } catch (_e) {}
+      toast('Copie o link manualmente.', true);
+    }
+  });
   
   // Load payment providers for select
   loadPaymentProviders();
