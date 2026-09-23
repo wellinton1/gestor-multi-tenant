@@ -68,10 +68,6 @@ app.set('trust proxy', 1);
 const GLOBAL_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 600)
   : (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 1000);
-const AUTH_RATE_LIMIT_MAX = isProduction
-  ? (Number(process.env.RATE_LIMIT_AUTH_MAX) || 10)
-  : (Number(process.env.RATE_LIMIT_AUTH_MAX) || 200);
-const AUTH_RATE_LIMIT_WINDOW_MIN = Number(process.env.RATE_LIMIT_AUTH_WINDOW_MIN) || 1;
 const PASSWORD_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 6)
   : (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 50);
@@ -134,20 +130,6 @@ const globalLimiter = rateLimit({
   legacyHeaders: false
 });
 app.use('/api', globalLimiter);
-
-// Stricter rate limit for login (anti brute-force).
-// So conta POST/PUT/DELETE: os GETs do fluxo normal (abrir a pagina, /me,
-// google-config, /google, /google/callback) NAO gastam o balde — antes cada
-// clique no "Continuar com Google" consumia 2 tentativas e travava em seguida.
-// Padrao: 10 tentativas; ao estourar, aguarda 1 minuto (janela reinicia).
-const authLimiter = rateLimit({
-  windowMs: AUTH_RATE_LIMIT_WINDOW_MIN * 60 * 1000,
-  max: AUTH_RATE_LIMIT_MAX,
-  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
-  message: { error: `Muitas tentativas de login - aguarde ${AUTH_RATE_LIMIT_WINDOW_MIN} minuto${AUTH_RATE_LIMIT_WINDOW_MIN === 1 ? '' : 's'}.` },
-  standardHeaders: true,
-  legacyHeaders: false
-});
 
 // Rate limit for password change routes
 const passwordLimiter = rateLimit({
@@ -271,12 +253,12 @@ app.use((req, res, next) => {
 // estar pronto — ver boot() no final do arquivo).
 
 // API routes
-// Montagem unica: os dois routers no mesmo app.use para o authLimiter contar
-// 1x por request (montar 2x com o mesmo limiter contava 2 tentativas por clique).
-app.use('/api/auth', authLimiter, authRoutes, passwordRecoveryRoutes); // login + forgot/reset
+// Sem rate-limit dedicado no login: o admin precisa entrar sempre.
+// (Protecao restante: limite global da API + bcrypt + erro generico.)
+app.use('/api/auth', authRoutes, passwordRecoveryRoutes); // login + forgot/reset
 
 app.use('/api/2fa', require('./src/middleware/auth').requireLogin, twoFactorRoutes);
-app.use('/api/setup', authLimiter, setupRoutes);
+app.use('/api/setup', setupRoutes);
 app.use('/api/password', require('./src/middleware/auth').requireLogin, passwordLimiter, passwordRoutes);
 app.use('/api/establishments', establishmentsRoutes);
 app.use('/api/clients', clientsRoutes);
