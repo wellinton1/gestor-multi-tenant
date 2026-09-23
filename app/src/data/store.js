@@ -590,10 +590,22 @@ function init() {
         console.error(`[store] FALHA no banco dedicado do tenant ${estId}:`, err.message);
       }
     }
+    // Snapshot residual em data/db.json: importar SOMENTE se o banco estiver
+    // vazio (migracao inicial). Se o banco ja tem dados, um db.json deixado por
+    // backup interrompido (ex.: servico parado durante o backup) ou restore
+    // antigo NAO pode sobrescrever o estado atual — isso revertia dados e a
+    // senha do administrador a cada reinicio/atualizacao. Restores explicitos
+    // continuam importando sempre via reloadFromDisk().
+    await loadAllIntoCache();
     if (fs.existsSync(DB_FILE)) {
-      await importSnapshotFile();
-    } else {
-      await loadAllIntoCache();
+      const hasData = COLLECTIONS.some((c) => (cache[c] || []).length > 0);
+      if (hasData) {
+        const archive = DB_FILE + '.ignored-' + Date.now();
+        fs.renameSync(DB_FILE, archive);
+        console.warn('[store] data/db.json residual ignorado (banco ja tem dados). Arquivado como', path.basename(archive));
+      } else {
+        await importSnapshotFile();
+      }
     }
     if (process.env.STORE_PG_SYNC !== 'false') {
       reloadTimer = setInterval(() => {

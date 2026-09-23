@@ -131,25 +131,28 @@ async function createBackup(kind) {
   // continue self-contained (restauravel em qualquer instalacao).
   await store.exportSnapshot(store.DB_FILE);
 
-  const filename = `backup-${kind}-${zipTimestamp(new Date())}.zip`;
-  const dest = path.join(BACKUP_DIR, filename);
+  try {
+    const filename = `backup-${kind}-${zipTimestamp(new Date())}.zip`;
+    const dest = path.join(BACKUP_DIR, filename);
 
-  const zip = new AdmZip();
-  const addDir = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      const rel = path.relative(APP_ROOT, full);
-      if (isExcludedRel(rel)) continue;
-      if (entry.isDirectory()) addDir(full);
-      else zip.addLocalFile(full, path.dirname(rel).split(path.sep).join('/'), entry.name);
-    }
-  };
-  addDir(APP_ROOT);
-  zip.writeZip(dest);
-  // Remove o export temporario: o PostgreSQL passa a ser a fonte da verdade.
-  // (Se ficasse, o proximo boot re-importaria um snapshot possivelmente antigo.)
-  try { fs.unlinkSync(store.DB_FILE); } catch (e) { /* ignora */ }
-  return { filename, sizeBytes: fs.statSync(dest).size };
+    const zip = new AdmZip();
+    const addDir = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        const rel = path.relative(APP_ROOT, full);
+        if (isExcludedRel(rel)) continue;
+        if (entry.isDirectory()) addDir(full);
+        else zip.addLocalFile(full, path.dirname(rel).split(path.sep).join('/'), entry.name);
+      }
+    };
+    addDir(APP_ROOT);
+    zip.writeZip(dest);
+    return { filename, sizeBytes: fs.statSync(dest).size };
+  } finally {
+    // Remove o export temporario SEMPRE (mesmo se o zip falhar): um db.json
+    // residual seria reimportado no proximo boot, revertendo dados e senhas.
+    try { fs.unlinkSync(store.DB_FILE); } catch (e) { /* ignora */ }
+  }
 }
 
 function pruneAutoBackups(maxAuto) {
