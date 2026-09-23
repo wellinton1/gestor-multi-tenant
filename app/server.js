@@ -69,8 +69,9 @@ const GLOBAL_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 600)
   : (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 1000);
 const AUTH_RATE_LIMIT_MAX = isProduction
-  ? (Number(process.env.RATE_LIMIT_AUTH_MAX) || 7)
+  ? (Number(process.env.RATE_LIMIT_AUTH_MAX) || 10)
   : (Number(process.env.RATE_LIMIT_AUTH_MAX) || 200);
+const AUTH_RATE_LIMIT_WINDOW_MIN = Number(process.env.RATE_LIMIT_AUTH_WINDOW_MIN) || 1;
 const PASSWORD_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 6)
   : (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 50);
@@ -138,11 +139,12 @@ app.use('/api', globalLimiter);
 // So conta POST/PUT/DELETE: os GETs do fluxo normal (abrir a pagina, /me,
 // google-config, /google, /google/callback) NAO gastam o balde — antes cada
 // clique no "Continuar com Google" consumia 2 tentativas e travava em seguida.
+// Padrao: 10 tentativas; ao estourar, aguarda 1 minuto (janela reinicia).
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: AUTH_RATE_LIMIT_WINDOW_MIN * 60 * 1000,
   max: AUTH_RATE_LIMIT_MAX,
   skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
-  message: { error: 'Muitas tentativas de login - aguarde 15 minutos.' },
+  message: { error: `Muitas tentativas de login - aguarde ${AUTH_RATE_LIMIT_WINDOW_MIN} minuto${AUTH_RATE_LIMIT_WINDOW_MIN === 1 ? '' : 's'}.` },
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -325,12 +327,12 @@ app.get('*', (req, res) => {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0" />
 <meta name="theme-color" content="#ffffff" />
 <title>Painel de Gestao</title>
-<link rel="stylesheet" href="/css/style.css?v=20260922e" nonce="${nonce}" />
-<link rel="stylesheet" href="/themes/tokens-base.css?v=20260922e" nonce="${nonce}" />
+<link rel="stylesheet" href="/css/style.css?v=20260922f" nonce="${nonce}" />
+<link rel="stylesheet" href="/themes/tokens-base.css?v=20260922f" nonce="${nonce}" />
 </head>
 <body>
 <div id="root"></div>
-<script src="/js/app.js?v=20260922e" nonce="${nonce}"></script>
+<script src="/js/app.js?v=20260922f" nonce="${nonce}"></script>
 </body>
 </html>`;
   res.set({

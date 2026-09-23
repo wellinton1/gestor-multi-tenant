@@ -121,6 +121,8 @@ async function api(method, path, body) {
   if (!res.ok) {
     const err = new Error((data && data.error) || 'Erro na requisicao.');
     err.status = res.status;
+    const retryAfter = Number(res.headers.get('Retry-After'));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) err.retryAfter = retryAfter;
     throw err;
   }
   return data;
@@ -689,8 +691,14 @@ function renderResetPassword(token, errorMsg) {
 }
 
 async function handleLogin(credentials) {
+  if (loginCooldownUntil > Date.now()) {
+    startLoginCooldown(Math.ceil((loginCooldownUntil - Date.now()) / 1000));
+    return;
+  }
   try {
     const result = await api('POST', '/api/auth/login', credentials);
+    loginCooldownUntil = 0;
+    clearInterval(loginCooldownTimer);
     if (result.requireTwoFactor) {
       // Mostra modal de 2FA
       showTwoFactorModal(result.userId, credentials);
@@ -702,8 +710,68 @@ async function handleLogin(credentials) {
     }
     render();
   } catch (err) {
+    if (err.status === 429) {
+      startLoginCooldown(err.retryAfter || 60);
+      return;
+    }
     renderLogin(err.message);
   }
+}
+
+// Bloqueio temporario do login: mostra contador regressivo e reabilita o botao
+// quando o tempo terminar (o backend tambem informa via header Retry-After).
+let loginCooldownUntil = 0;
+let loginCooldownTimer = null;
+
+function startLoginCooldown(seconds) {
+  const total = Math.max(1, Math.ceil(Number(seconds) || 60));
+  loginCooldownUntil = Date.now() + total * 1000;
+  renderLogin();
+  const card = document.querySelector('.login-card');
+  const form = document.getElementById('login-form');
+  const btn = form ? form.querySelector('button[type="submit"]') : null;
+  let errorBox = document.getElementById('login-cooldown-msg');
+  if (!errorBox && card && form) {
+    errorBox = document.createElement('div');
+    errorBox.id = 'login-cooldown-msg';
+    errorBox.className = 'error-msg';
+    card.insertBefore(errorBox, form);
+  }
+  clearInterval(loginCooldownTimer);
+  const tick = () => {
+    const remaining = Math.ceil((loginCooldownUntil - Date.now()) / 1000);
+    if (remaining <= 0) {
+      clearInterval(loginCooldownTimer);
+      loginCooldownUntil = 0;
+      if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+      if (errorBox) errorBox.textContent = 'Pode tentar novamente agora.';
+      return;
+    }
+    if (errorBox) errorBox.textContent = `Muitas tentativas de login - aguarde ${remaining}s para tentar novamente.`;
+    if (btn) { btn.disabled = true; btn.textContent = `Aguarde ${remaining}s`; }
+  };
+  tick();
+  loginCooldownTimer = setInterval(tick, 1000);
+}
+
+function startButtonCooldown(btn, seconds, label) {
+  if (!btn) return;
+  const total = Math.max(1, Math.ceil(Number(seconds) || 60));
+  const original = label || btn.textContent;
+  let remaining = total;
+  btn.disabled = true;
+  const tick = () => {
+    if (remaining <= 0) {
+      clearInterval(timer);
+      btn.disabled = false;
+      btn.textContent = original;
+      return;
+    }
+    btn.textContent = `Aguarde ${remaining}s`;
+    remaining -= 1;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
 }
 
 function showTwoFactorModal(userId, originalCredentials) {
@@ -1140,6 +1208,9 @@ function openTenantLoginModal(establishment) {
         closeModal();
         render();
       } catch (err) {
+        if (err.status === 429) {
+          startButtonCooldown(e.target.querySelector('button[type="submit"]'), err.retryAfter || 60, `Entrar em ${establishment.name}`);
+        }
         toast(err.message, true);
       }
     });
