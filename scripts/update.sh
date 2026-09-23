@@ -196,6 +196,32 @@ EOF
   echo ".env reconstruido para a VPS (senha do banco atualizada)."
 }
 
+# Libera a porta do app matando processos ÓRFÃOS (ex.: 'node server.js'
+# manual, fora do systemd) que impediriam o serviço de subir (EADDRINUSE).
+# Só mata processo cujo binário seja node, a linha de comando contenha
+# server.js e o cwd seja o diretório instalado ou o clone — nunca outra coisa.
+free_app_port() {
+  local port="$1" pid exe cmdline cwd sig
+  [ -n "$port" ] || return 0
+  command -v ss >/dev/null 2>&1 || return 0
+  for sig in TERM KILL; do
+    for pid in $(ss -tlnp 2>/dev/null | grep -o 'pid=[0-9][0-9]*' | cut -d= -f2 | sort -u || true); do
+      case "$pid" in ''|*[!0-9]*) continue ;; esac
+      [ "$pid" = "$$" ] && continue
+      exe="$(readlink "/proc/$pid/exe" 2>/dev/null || true)"
+      case "$exe" in *node*) ;; *) continue ;; esac
+      cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+      case "$cmdline" in *server.js*) ;; *) continue ;; esac
+      cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+      case "$cwd" in "$INSTALL_DIR"|"$SOURCE_APP_DIR") ;; *) continue ;; esac
+      echo "Finalizando processo órfão do app -$sig (PID $pid, cwd $cwd)..."
+      kill "-$sig" "$pid" 2>/dev/null || true
+    done
+    sleep 1
+  done
+  return 0
+}
+
 # Garante CREATEDB ao usuario do app (bancos dedicados por tenant em 1 clique).
 ensure_createdb() {
   local env_file="$INSTALL_DIR/.env" db_url_user
@@ -287,6 +313,11 @@ bash "$SCRIPT_DIR/backup.sh" "$INSTALL_DIR" "/opt/backups-gestor-multi-tenant" |
 
 echo "Parando o servico..."
 systemctl stop "$SERVICE_NAME" || true
+# O stop acima não alcança processos manuais fora do systemd: sem esta
+# limpeza, um 'node server.js' órfão seguraria a porta e o start falharia
+# (EADDRINUSE) com o serviço em loop de crash.
+APP_PORT="$(env_get "$INSTALL_DIR/.env" PORT)"; [ -n "$APP_PORT" ] || APP_PORT="3000"
+free_app_port "$APP_PORT"
 
 if ! command -v rsync >/dev/null 2>&1; then
   echo "Instalando rsync..."
@@ -307,7 +338,13 @@ sudo -u "$SERVICE_USER" npm install --omit=dev --no-audit --no-fund
 echo "Reiniciando o servico..."
 systemctl start "$SERVICE_NAME"
 sleep 2
-systemctl status "$SERVICE_NAME" --no-pager
+if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+  echo "ERRO: o servico nao subiu. Ultimas linhas do log:"
+  journalctl -u "$SERVICE_NAME" -n 30 --no-pager || true
+  echo "Dica: porta $APP_PORT ocupada? Confira com: ss -tlnp | grep $APP_PORT"
+  exit 1
+fi
+systemctl status "$SERVICE_NAME" --no-pager | head -12
 
 # Mostra exatamente qual codigo foi implantado (confere com o GitHub).
 DEPLOYED_SHA="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
