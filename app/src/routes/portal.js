@@ -239,7 +239,7 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       item.itemType = service.itemType === 'Produto' ? 'Produto' : 'Servico';
     }
 
-    const needsDelivery = services.some((item) => item.itemType === 'Produto');
+    const needsDelivery = est.niche === 'Pizzaria' || services.some((item) => item.itemType === 'Produto');
     const deliveryAddress = {
       addressStreet: String(req.validated.addressStreet || '').trim(),
       addressCity: String(req.validated.addressCity || '').trim(),

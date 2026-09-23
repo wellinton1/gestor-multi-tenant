@@ -162,6 +162,14 @@ function clientAddressMapsLink(c) {
   if (parts.length === 0) return '';
   return toMapsLink(parts.join(', '));
 }
+function slugifyStoreName(name) {
+  const slug = String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'loja';
+}
 function formatDateTime(iso) {
   if (!iso) return '-';
   const d = new Date(iso);
@@ -2292,7 +2300,10 @@ function openCashClosingModal() {
 
 function openServiceModal(svc) {
   const isEdit = !!svc;
-  const isProduct = svc?.itemType === 'Produto';
+  const defaultItemType = isEdit
+    ? (svc?.itemType === 'Produto' ? 'Produto' : 'Servico')
+    : (currentEstablishment && currentEstablishment.niche === 'Pizzaria' ? 'Produto' : 'Servico');
+  const isProduct = defaultItemType === 'Produto';
   let photoDataUrl = svc?.photoDataUrl || '';
   const bodyHtml = `
     <form id="svc-form">
@@ -2372,7 +2383,7 @@ async function renderConfiguracoesPage() {
     est = currentEstablishment;
   } catch (e) { /* mantem o que tem */ }
   let est = currentEstablishment;
-  const portalUrl = `${location.origin}/loja/${est.id}`;
+  const portalUrl = `${location.origin}/${slugifyStoreName(est.name)}/${est.id}`;
   const DAY_NAMES = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
   const hours = est.businessHours || {};
   const currentTheme = est.theme || (est.niche ? NICHE_TO_THEME_LEGACY[est.niche] : 'generico');

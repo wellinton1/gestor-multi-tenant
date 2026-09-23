@@ -69,8 +69,8 @@ function formatDuration(minutes) {
 
 function getEstablishmentId() {
   const parts = location.pathname.split('/').filter(Boolean);
-  // expects /loja/:id
-  return parts[1] || parts[0];
+  // Formatos: /nomedaloja/:id (novo) e /loja/:id (legado)
+  return parts[parts.length - 1] || '';
 }
 
 function captureBookingDraft() {
@@ -141,7 +141,8 @@ function renderPage() {
   const subtotal = safeSelectedServices.reduce((sum, item) => sum + (item?.price || 0) * (item?.qty || 0), 0);
   const itemCount = safeSelectedServices.reduce((sum, item) => sum + (item?.qty || 0), 0);
   const cooldownActive = bookingCooldown > 0;
-  const needsDelivery = safeSelectedServices.some((item) => item?.itemType === 'Produto');
+  const isPizzaria = establishment.niche === 'Pizzaria';
+  const needsDelivery = (isPizzaria && safeSelectedServices.length > 0) || safeSelectedServices.some((item) => item?.itemType === 'Produto');
   const draft = captureBookingDraft();
 
   function safeMap(arr, fn) {

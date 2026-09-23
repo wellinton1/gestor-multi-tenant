@@ -298,13 +298,19 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 // Public client-booking page (clean URL, no admin auth required)
-app.get('/loja/:establishmentId', (req, res) => {
+// Formatos: /nome-da-loja/:establishmentId (novo) e /loja/:id (legado)
+function servePortalPage(req, res) {
   res.sendFile(path.join(__dirname, 'public', 'portal.html'), {
     headers: {
       'X-Frame-Options': 'DENY',
       'X-Content-Type-Options': 'nosniff'
     }
   });
+}
+app.get('/loja/:establishmentId', servePortalPage);
+app.get('/:storeSlug/:establishmentId', (req, res, next) => {
+  if (req.params.storeSlug === 'api') return next();
+  return servePortalPage(req, res);
 });
 
 // Everything else -> the admin SPA (client-side routing handles the rest)
@@ -317,12 +323,12 @@ app.get('*', (req, res) => {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0" />
 <meta name="theme-color" content="#ffffff" />
 <title>Painel de Gestao</title>
-<link rel="stylesheet" href="/css/style.css" nonce="${nonce}" />
-<link rel="stylesheet" href="/themes/tokens-base.css" nonce="${nonce}" />
+<link rel="stylesheet" href="/css/style.css?v=20260922c" nonce="${nonce}" />
+<link rel="stylesheet" href="/themes/tokens-base.css?v=20260922c" nonce="${nonce}" />
 </head>
 <body>
 <div id="root"></div>
-<script src="/js/app.js" nonce="${nonce}"></script>
+<script src="/js/app.js?v=20260922c" nonce="${nonce}"></script>
 </body>
 </html>`;
   res.set({
