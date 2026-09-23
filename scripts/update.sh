@@ -245,6 +245,54 @@ chmod 600 "$INSTALL_DIR/.env" 2>/dev/null || true
 chown "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR/.env" 2>/dev/null || true
 ensure_createdb
 
+# ---------- SMTP transacional (recuperação de senha) ----------
+# Preenche no .env só as chaves AUSENTES (nunca sobrescreve o que já existe).
+# O segredo (SMTP_PASS) é pedido no terminal quando há interatividade; sem
+# terminal, apenas avisa. Nenhum segredo fica hardcoded no repo.
+ensure_smtp_config() {
+  local env_file="$INSTALL_DIR/.env"
+  [ -f "$env_file" ] || return 0
+  local missing_pass=0
+  grep -q '^SMTP_HOST=' "$env_file" || printf '%s\n' "SMTP_HOST=smtp-relay.brevo.com" >> "$env_file"
+  grep -q '^SMTP_PORT=' "$env_file" || printf '%s\n' "SMTP_PORT=587" >> "$env_file"
+  grep -q '^SMTP_SECURE=' "$env_file" || printf '%s\n' "SMTP_SECURE=false" >> "$env_file"
+  grep -q '^SMTP_USER=' "$env_file" || printf '%s\n' "SMTP_USER=ba45d2001@smtp-brevo.com" >> "$env_file"
+  grep -q '^APP_BASE_URL=' "$env_file" || printf '%s\n' "APP_BASE_URL=https://gestaodeloja.online" >> "$env_file"
+  if ! grep -q '^SMTP_PASS=' "$env_file"; then
+    if [ -t 0 ]; then
+      local _pass=""
+      read -rsp "Chave SMTP Brevo (SMTP_PASS, secreta — não aparece na tela): " _pass || true; echo ""
+      if [ -n "$_pass" ]; then
+        printf '%s\n' "SMTP_PASS=$_pass" >> "$env_file"
+      else
+        missing_pass=1
+      fi
+      unset _pass
+    else
+      missing_pass=1
+    fi
+  fi
+  if ! grep -q '^SMTP_FROM=' "$env_file"; then
+    local _default_from="Gestão de Lojas <lojas@gestaodeloja.online>"
+    if [ -t 0 ]; then
+      local _from=""
+      read -rp "Remetente VERIFICADO na Brevo (SMTP_FROM) [$_default_from]: " _from || true
+      [ -n "$_from" ] || _from="$_default_from"
+      printf '%s\n' "SMTP_FROM=$_from" >> "$env_file"
+    else
+      printf '%s\n' "SMTP_FROM=$_default_from" >> "$env_file"
+      echo "SMTP_FROM padrão aplicado: $_default_from"
+    fi
+  fi
+  chmod 600 "$env_file" 2>/dev/null || true
+  chown "$SERVICE_USER":"$SERVICE_USER" "$env_file" 2>/dev/null || true
+  if [ "$missing_pass" = "1" ]; then
+    echo "AVISO: SMTP_PASS ausente — recuperação de senha por email não vai funcionar."
+    echo "Defina depois em $env_file e reinicie: systemctl restart $SERVICE_NAME"
+  fi
+}
+ensure_smtp_config
+
 # Helper de upgrade do SO (chamado pelo painel via sudo; comandos fixos).
 # Evita 'bash -c' no sudoers (curingas em argumentos invalidam o sudo inteiro).
 cat > /usr/local/bin/gestor-system-upgrade.sh <<'HELPER'
