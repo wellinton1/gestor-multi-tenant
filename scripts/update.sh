@@ -219,16 +219,52 @@ chmod 600 "$INSTALL_DIR/.env" 2>/dev/null || true
 chown "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR/.env" 2>/dev/null || true
 ensure_createdb
 
-# Sudoers do terminal da Manutenção (idempotente; libera só diagnósticos + apt).
+# Helper de upgrade do SO (chamado pelo painel via sudo; comandos fixos).
+# Evita 'bash -c' no sudoers (curingas em argumentos invalidam o sudo inteiro).
+cat > /usr/local/bin/gestor-system-upgrade.sh <<'HELPER'
+#!/bin/bash
+# Upgrade de segurança do SO executado pelo painel Manutenção (sudo NOPASSWD).
+# Sem argumentos, sem entrada do usuário — comandos fixos por família.
+set -u
+if [ -f /etc/os-release ]; then . /etc/os-release; fi
+FAM="${ID_LIKE:-} ${ID:-}"
+case "$FAM" in
+  *debian*|*ubuntu*|*raspbian*|*linuxmint*|*pop*)
+    apt-get update -y && apt-get upgrade -y ;;
+  *rhel*|*fedora*|*centos*|*rocky*|*alma*|*ol*|*amzn*)
+    dnf upgrade -y ;;
+  *arch*|*manjaro*|*endeavour*)
+    pacman -Syu --noconfirm ;;
+  *alpine*)
+    apk update && apk upgrade ;;
+  *)
+    echo "Família de SO desconhecida (ID=${ID:-?}). Rode manual." >&2
+    exit 2 ;;
+esac
+HELPER
+chmod 755 /usr/local/bin/gestor-system-upgrade.sh
+chown root:root /usr/local/bin/gestor-system-upgrade.sh
+
+# Sudoers do terminal da Manutenção (idempotente; só comandos FIXOS, sem
+# curingas em argumentos — curinga invalida o arquivo e quebra todo o sudo).
+# Valida num temporário e só instala se o visudo aprovar.
 SUDOERS_FILE="/etc/sudoers.d/gestor-multi-tenant"
-cat > "$SUDOERS_FILE" <<EOF
+SUDOERS_TMP="$(mktemp)"
+cat > "$SUDOERS_TMP" <<EOF
 # Gerenciado pelo instalador do gestor-multi-tenant (idempotente).
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /bin/cat /var/log/auth.log*, /usr/bin/cat /var/log/auth.log*, /usr/sbin/ufw status*, /usr/bin/ufw status*, /sbin/iptables -S, /sbin/iptables -L*, /usr/sbin/iptables -S, /usr/sbin/iptables -L*, /usr/bin/apt-get update*, /usr/bin/apt-get upgrade*, /usr/bin/apt list*
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/ss -tlnp, /usr/sbin/ss -tlnp, /bin/cat /var/log/auth.log /var/log/auth.log.1, /usr/bin/cat /var/log/auth.log /var/log/auth.log.1, /usr/sbin/ufw status verbose, /usr/bin/ufw status verbose, /sbin/iptables -S, /usr/sbin/iptables -S, /usr/bin/systemctl status $SERVICE_NAME, /usr/bin/systemctl restart $SERVICE_NAME, /bin/systemctl status $SERVICE_NAME, /bin/systemctl restart $SERVICE_NAME, /usr/local/bin/gestor-system-upgrade.sh
 EOF
-chmod 440 "$SUDOERS_FILE"
+chmod 440 "$SUDOERS_TMP"
 if command -v visudo >/dev/null 2>&1; then
-  visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1 && echo "Sudoers do painel validado." || echo "AVISO: regra sudoers inválida."
+  if visudo -cf "$SUDOERS_TMP" >/dev/null 2>&1; then
+    cat "$SUDOERS_TMP" > "$SUDOERS_FILE"
+    chmod 440 "$SUDOERS_FILE"
+    echo "Sudoers do painel validado."
+  else
+    echo "AVISO: regra sudoers inválida — sudoers NÃO instalado (sudo continua funcionando)."
+  fi
 fi
+rm -f "$SUDOERS_TMP"
 
 echo "Fazendo backup rapido antes de atualizar..."
 bash "$SCRIPT_DIR/backup.sh" "$INSTALL_DIR" "/opt/backups-gestor-multi-tenant" || true

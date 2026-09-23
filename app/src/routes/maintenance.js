@@ -350,8 +350,12 @@ function upgradeRunning() {
 }
 
 // Atualização do SO em segundo plano (log acompanha via /upgrade-log).
-// Comando ajustado à família: apt (debian), dnf (rhel), pacman (arch), apk (alpine).
-// ATENÇÃO: altera a máquina — o botão do painel pede confirmação antes.
+// O binário executado é o helper root-owned instalado pelo install.sh /
+// update.sh (/usr/local/bin/gestor-system-upgrade.sh), que detecta a família
+// sozinho. Evita 'bash -c' no sudoers: o sudo rejeita curingas em argumentos
+// e invalida o arquivo inteiro (quebra todo o sudo da máquina).
+// UPGRADE_CMDS abaixo serve só p/ validar a família e exibir no log.
+const UPGRADE_HELPER = '/usr/local/bin/gestor-system-upgrade.sh';
 const UPGRADE_CMDS = {
   debian: 'apt-get update -y && apt-get upgrade -y',
   rhel: 'dnf upgrade -y',
@@ -375,12 +379,12 @@ router.post('/security/upgrade', (req, res) => {
   } catch (e) { /* segue */ }
   const stamp = new Date().toISOString();
   try {
-    fs.appendFileSync(UPGRADE_LOG, '\n===== upgrade (' + info.family + ') iniciado em ' + stamp + ' =====\n$ sudo bash -c \'' + upgradeCmd + '\'\n');
+    fs.appendFileSync(UPGRADE_LOG, '\n===== upgrade (' + info.family + ') iniciado em ' + stamp + ' =====\n$ sudo -n ' + UPGRADE_HELPER + '  (equivale a: ' + upgradeCmd + ')\n');
   } catch (e) {
     return res.status(500).json({ error: 'Não consegui escrever o log em ' + UPGRADE_LOG });
   }
   const fd = fs.openSync(UPGRADE_LOG, 'a');
-  const child = spawn('sudo', ['-n', 'bash', '-c', upgradeCmd], {
+  const child = spawn('sudo', ['-n', UPGRADE_HELPER], {
     detached: true,
     stdio: ['ignore', fd, fd]
   });

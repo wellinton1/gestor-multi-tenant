@@ -519,21 +519,54 @@ EOF
   ok "Nginx configurado para $DOMAIN_NAME (porta 80 -> app 127.0.0.1:$APP_PORT)."
 fi
 
+# ---------- helper de upgrade do SO (chamado pelo painel via sudo) ----------
+# Script root-owned com comandos FIXOS por família: evita 'bash -c' no sudoers
+# (o sudo rejeita curingas em argumentos e invalida o sudo inteiro).
+cat > /usr/local/bin/gestor-system-upgrade.sh <<'HELPER'
+#!/bin/bash
+# Upgrade de segurança do SO executado pelo painel Manutenção (sudo NOPASSWD).
+# Sem argumentos, sem entrada do usuário — comandos fixos por família.
+set -u
+if [ -f /etc/os-release ]; then . /etc/os-release; fi
+FAM="${ID_LIKE:-} ${ID:-}"
+case "$FAM" in
+  *debian*|*ubuntu*|*raspbian*|*linuxmint*|*pop*)
+    apt-get update -y && apt-get upgrade -y ;;
+  *rhel*|*fedora*|*centos*|*rocky*|*alma*|*ol*|*amzn*)
+    dnf upgrade -y ;;
+  *arch*|*manjaro*|*endeavour*)
+    pacman -Syu --noconfirm ;;
+  *alpine*)
+    apk update && apk upgrade ;;
+  *)
+    echo "Família de SO desconhecida (ID=${ID:-?}). Rode manual." >&2
+    exit 2 ;;
+esac
+HELPER
+chmod 755 /usr/local/bin/gestor-system-upgrade.sh
+chown root:root /usr/local/bin/gestor-system-upgrade.sh
+
 # ---------- sudoers (terminal da Manutenção) ----------
-# Libera NOPASSWD só para os comandos de diagnóstico que o painel executa
-# (ss, leitura do auth.log, leitura de ufw/iptables, apt). Sem isso, os botões
-# da Manutenção mostram o comando SSH equivalente para colar.
+# Libera NOPASSWD só para os comandos FIXOS que o painel executa
+# (ver app/src/routes/maintenance.js). REGRA DURA: nenhum curinga em
+# argumentos — o sudo rejeita o ARQUIVO INTEIRO ("wildcards are not allowed
+# in command arguments") e aí NENHUM sudo funciona na máquina.
+# Por isso validamos num temporário e só instalamos se o visudo aprovar.
 SUDOERS_FILE="/etc/sudoers.d/gestor-multi-tenant"
-cat > "$SUDOERS_FILE" <<EOF
+SUDOERS_TMP="$(mktemp)"
+cat > "$SUDOERS_TMP" <<EOF
 # Gerenciado pelo instalador do gestor-multi-tenant (idempotente).
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/ss, /usr/sbin/ss, /bin/cat /var/log/auth.log*, /usr/bin/cat /var/log/auth.log*, /usr/sbin/ufw status*, /usr/bin/ufw status*, /sbin/iptables -S, /sbin/iptables -L*, /usr/sbin/iptables -S, /usr/sbin/iptables -L*, /usr/bin/apt-get update*, /usr/bin/apt-get upgrade*, /usr/bin/apt list*
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/ss -tlnp, /usr/sbin/ss -tlnp, /bin/cat /var/log/auth.log /var/log/auth.log.1, /usr/bin/cat /var/log/auth.log /var/log/auth.log.1, /usr/sbin/ufw status verbose, /usr/bin/ufw status verbose, /sbin/iptables -S, /usr/sbin/iptables -S, /usr/bin/systemctl status $SERVICE_NAME, /usr/bin/systemctl restart $SERVICE_NAME, /bin/systemctl status $SERVICE_NAME, /bin/systemctl restart $SERVICE_NAME, /usr/local/bin/gestor-system-upgrade.sh
 EOF
-chmod 440 "$SUDOERS_FILE"
-if command -v visudo >/dev/null 2>&1 && visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1; then
+chmod 440 "$SUDOERS_TMP"
+if command -v visudo >/dev/null 2>&1 && visudo -cf "$SUDOERS_TMP" >/dev/null 2>&1; then
+  cat "$SUDOERS_TMP" > "$SUDOERS_FILE"
+  chmod 440 "$SUDOERS_FILE"
   ok "Sudoers do painel validado (botões da Manutenção liberados)."
 else
-  warn "visudo indisponível ou regra inválida — botões da Manutenção vão pedir o comando SSH."
+  warn "visudo indisponível ou regra inválida — sudoers NÃO instalado (sudo continua funcionando)."
 fi
+rm -f "$SUDOERS_TMP"
 
 # ---------- resumo final ----------
 SERVER_IP="$(curl -s -4 --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')"
