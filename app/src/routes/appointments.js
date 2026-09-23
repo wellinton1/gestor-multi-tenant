@@ -8,6 +8,18 @@ router.use(requireLogin, requireEstablishment);
 
 const VALID_STATUSES = ['Pendente', 'Em Andamento', 'Concluido', 'Cancelado'];
 
+function buildAddressLine(c) {
+  if (!c) return '';
+  const parts = [];
+  const street = [c.addressStreet, c.addressNumber].filter(Boolean).join(', ');
+  if (street) parts.push(street);
+  if (c.addressComplement) parts.push(c.addressComplement);
+  if (c.addressDistrict) parts.push(c.addressDistrict);
+  const cityState = [c.addressCity, c.addressState].filter(Boolean).join(' - ');
+  if (cityState) parts.push(cityState);
+  return parts.join(' - ');
+}
+
 function decorate(appt, estId) {
   const client = store.findByIdScoped('clients', appt.clientId, estId);
   const employee = appt.employeeId ? store.findByIdScoped('employees', appt.employeeId, estId) : null;
@@ -15,6 +27,7 @@ function decorate(appt, estId) {
     ...appt,
     clientName: client ? client.name : '(cliente removido)',
     clientPhone: client ? client.phone : '',
+    clientAddress: buildAddressLine(client),
     employeeName: employee ? employee.name : null
   };
 }

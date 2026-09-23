@@ -73,6 +73,24 @@ function getEstablishmentId() {
   return parts[1] || parts[0];
 }
 
+function captureBookingDraft() {
+  const form = document.getElementById('booking-form');
+  const draft = {};
+  if (!form) return draft;
+  form.querySelectorAll('input, textarea').forEach((el) => {
+    if (el.name && el.type !== 'hidden') draft[el.name] = el.value;
+  });
+  return draft;
+}
+
+function restoreBookingDraft(draft) {
+  const form = document.getElementById('booking-form');
+  if (!form || !draft) return;
+  form.querySelectorAll('input, textarea').forEach((el) => {
+    if (el.name && el.type !== 'hidden' && !el.value && draft[el.name]) el.value = draft[el.name];
+  });
+}
+
 let establishment = null;
 let selectedServices = [];
 let bookingCooldown = 0;
@@ -123,6 +141,8 @@ function renderPage() {
   const subtotal = safeSelectedServices.reduce((sum, item) => sum + (item?.price || 0) * (item?.qty || 0), 0);
   const itemCount = safeSelectedServices.reduce((sum, item) => sum + (item?.qty || 0), 0);
   const cooldownActive = bookingCooldown > 0;
+  const needsDelivery = safeSelectedServices.some((item) => item?.itemType === 'Produto');
+  const draft = captureBookingDraft();
 
   function safeMap(arr, fn) {
     if (!Array.isArray(arr) || typeof fn !== 'function') return '';
@@ -149,18 +169,19 @@ function renderPage() {
             <div class="portal-services-grid" id="services-list">
               ${safeMap(services, (s) => {
                 const selected = selectedServices.find((item) => item.id === s.id);
+                const isProduct = s.itemType === 'Produto';
                 return `
                   <div class="portal-service-option ${selected ? 'selected' : ''}" data-id="${s.id}">
                     ${s.photoDataUrl ? `<div class="service-image"><img src="${s.photoDataUrl}" alt="${escapeHtml(s.name)}" /></div>` : ''}
                     <div class="service-card-top">
-                      <div class="service-badge">${escapeHtml(s.category || 'Serviço')}</div>
+                      <div class="service-badge">${escapeHtml(s.category || 'Serviço')}${isProduct ? ' · Produto' : ''}</div>
                       <strong class="svc-name">${escapeHtml(s.name)}</strong>
                       ${s.description ? `<div class="svc-desc">${escapeHtml(s.description)}</div>` : ''}
                     </div>
                     <div class="service-card-bottom">
                       <div class="svc-meta">
                         <span>${formatMoney(s.price)}</span>
-                        <span>${formatDuration(s.durationMinutes)}</span>
+                        <span>${isProduct ? 'Entrega' : formatDuration(s.durationMinutes)}</span>
                       </div>
                       <button type="button" class="service-action-btn">${selected ? 'Remover' : '+ Adicionar'}</button>
                     </div>
@@ -208,6 +229,24 @@ function renderPage() {
                 <div class="form-field"><label>Telefone (WhatsApp) *</label><input type="text" name="clientPhone" required placeholder="(11) 99999-9999" ${cooldownActive ? 'disabled' : ''} /></div>
                 <div class="form-field"><label>Email</label><input type="email" name="clientEmail" ${cooldownActive ? 'disabled' : ''} /></div>
               </div>
+              ${needsDelivery ? `
+              <div class="associate-divider"></div>
+              <div class="portal-delivery-title">Endereço de entrega</div>
+              <div class="form-field"><label>Logradouro *</label><input type="text" name="addressStreet" placeholder="ex Rua do Ancião" required ${cooldownActive ? 'disabled' : ''} /></div>
+              <div class="form-grid">
+                <div class="form-field"><label>Cidade *</label><input type="text" name="addressCity" placeholder="ex São Paulo" required ${cooldownActive ? 'disabled' : ''} /></div>
+                <div class="form-field"><label>Estado *</label><input type="text" name="addressState" placeholder="ex SP" required ${cooldownActive ? 'disabled' : ''} /></div>
+              </div>
+              <div class="form-grid">
+                <div class="form-field"><label>Número *</label><input type="text" name="addressNumber" required ${cooldownActive ? 'disabled' : ''} /></div>
+                <div class="form-field"><label>Complemento</label><input type="text" name="addressComplement" placeholder="Ex. Casa, apartamento" ${cooldownActive ? 'disabled' : ''} /></div>
+              </div>
+              <div class="form-grid">
+                <div class="form-field"><label>Bairro *</label><input type="text" name="addressDistrict" placeholder="ex Chácara Maria Trindade" required ${cooldownActive ? 'disabled' : ''} /></div>
+                <div class="form-field"><label>Ponto de referência</label><input type="text" name="addressReference" placeholder="Ex. Perto da padaria" ${cooldownActive ? 'disabled' : ''} /></div>
+              </div>
+              <div class="form-field"><label>Favoritar como</label><input type="text" name="addressLabel" placeholder="Ex. Minha casa" ${cooldownActive ? 'disabled' : ''} /></div>
+              ` : ''}
               <div class="form-field"><label>Data desejada *</label><input type="date" name="bookingDate" id="booking-date" required min="${new Date().toISOString().split('T')[0]}" ${cooldownActive ? 'disabled' : ''} /></div>
               <div class="form-field" id="time-slots-container" style="display:none;">
                 <label>Horario disponivel *</label>
@@ -234,6 +273,8 @@ function renderPage() {
     </div>
   `;
 
+  restoreBookingDraft(draft);
+
   document.querySelectorAll('.portal-service-option').forEach((el) => {
     el.addEventListener('click', () => {
       const id = el.dataset.id;
@@ -243,7 +284,7 @@ function renderPage() {
       if (existing) {
         selectedServices = (selectedServices || []).filter((item) => item.id !== id);
       } else {
-        selectedServices = [...(selectedServices || []), { id, name: service.name, price: service.price, qty: 1 }];
+        selectedServices = [...(selectedServices || []), { id, name: service.name, price: service.price, qty: 1, itemType: service.itemType || 'Servico' }];
       }
       renderPage();
     });
@@ -261,7 +302,7 @@ function renderPage() {
       if (existing) {
         selectedServices = (selectedServices || []).filter((item) => item.id !== id);
       } else {
-        selectedServices = [...(selectedServices || []), { id, name: service.name, price: service.price, qty: 1 }];
+        selectedServices = [...(selectedServices || []), { id, name: service.name, price: service.price, qty: 1, itemType: service.itemType || 'Servico' }];
       }
       renderPage();
     });
@@ -307,7 +348,7 @@ function renderPage() {
       if (selectedOptions.length > 0 && allServices.length > 0) {
         selectedServices = selectedOptions.map((el) => {
           const service = allServices.find((s) => s.id === el.dataset.id);
-          return service ? { id: service.id, name: service.name, price: service.price, qty: 1 } : null;
+          return service ? { id: service.id, name: service.name, price: service.price, qty: 1, itemType: service.itemType || 'Servico' } : null;
         }).filter(Boolean);
       }
     }
@@ -324,7 +365,15 @@ function renderPage() {
       selectedServices: safeSelectedServices.filter((item) => item && item.qty > 0),
       dateTime: fd.get('dateTime'),
       notes: fd.get('notes'),
-      couponCode: fd.get('couponCode') || ''
+      couponCode: fd.get('couponCode') || '',
+      addressStreet: fd.get('addressStreet') || '',
+      addressCity: fd.get('addressCity') || '',
+      addressState: fd.get('addressState') || '',
+      addressNumber: fd.get('addressNumber') || '',
+      addressComplement: fd.get('addressComplement') || '',
+      addressDistrict: fd.get('addressDistrict') || '',
+      addressReference: fd.get('addressReference') || '',
+      addressLabel: fd.get('addressLabel') || ''
     };
     if (!payload.dateTime) {
       alert('Por favor, selecione uma data e horario disponivel.');

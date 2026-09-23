@@ -692,6 +692,8 @@ select.status-select {
   color: #565b66;
 }
 [data-theme="dark"] .category-tag { background: #1e1f24; color: #9a9ea8; }
+.category-tag.product-tag { background: rgba(var(--accent-rgb), 0.12); color: var(--accent-dark); margin-left: 6px; }
+[data-theme="dark"] .category-tag.product-tag { background: rgba(var(--accent-rgb), 0.2); color: var(--accent-light); }
 
 /* ============================================================================
    SERVICES GRID
@@ -1965,6 +1967,14 @@ select.status-select {
 }
 
 .portal-booking-form .form-field { margin-bottom: 0; }
+
+.portal-delivery-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 12px;
+}
+[data-theme="dark"] .portal-delivery-title { color: var(--text); }
 
 .portal-booking-form .form-field label {
   display: block;

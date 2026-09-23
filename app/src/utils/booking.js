@@ -10,7 +10,8 @@ function normalizeSelectedServices(selectedServices) {
         id: String(item.id),
         name: String(item.name || '').trim(),
         price: Number(item.price) || 0,
-        qty
+        qty,
+        itemType: item.itemType === 'Produto' ? 'Produto' : 'Servico'
       };
     })
     .filter(Boolean);

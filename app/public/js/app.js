@@ -1523,9 +1523,20 @@ async function renderPedidosPage() {
             const rawPhone = a.clientPhone || (cachedClients.find((c) => c.id === a.clientId) || {}).phone || '';
             const whatsappLink = toWhatsappLink(rawPhone);
             const clientEmail = (cachedClients.find((c) => c.id === a.clientId) || {}).email || '';
+            const deliveryLine = a.deliveryAddress ? clientAddressLine(a.deliveryAddress) : '';
+            const addressLine = deliveryLine || a.clientAddress || '';
+            const addressLabel = (a.deliveryAddress && a.deliveryAddress.addressLabel) || '';
             return `
             <tr data-id="${a.id}">
-              <td class="cell-strong">${escapeHtml(a.clientName)}</td>
+              <td class="cell-strong">
+                ${escapeHtml(a.clientName)}
+                ${addressLine ? `
+                  <div class="address-block">
+                    ${addressLabel ? `<div class="address-label">${escapeHtml(addressLabel)}</div>` : ''}
+                    <div class="address-line">${a.deliveryAddress ? 'Entrega: ' : ''}${escapeHtml(addressLine)}</div>
+                  </div>
+                ` : ''}
+              </td>
               <td class="cell-muted">${whatsappLink ? `<a href="${whatsappLink}" target="_blank" rel="noopener" class="whatsapp-link">${escapeHtml(rawPhone)}</a>` : '&mdash;'}</td>
               <td class="cell-muted">${escapeHtml(a.serviceName || '—')}</td>
               <td class="cell-muted">${a.employeeName ? escapeHtml(a.employeeName) : '&mdash;'}</td>
@@ -2081,20 +2092,23 @@ async function renderServicosPage() {
 
   mainEl().innerHTML = `
     <div class="page-header">
-      <div><h1>Servicos</h1><p>Gerencie os servicos oferecidos</p></div>
-      <button class="btn btn-primary" id="new-svc-btn">${ICONS.plus} Novo Servico</button>
+      <div><h1>Servicos e Produtos</h1><p>Gerencie os servicos e produtos oferecidos</p></div>
+      <button class="btn btn-primary" id="new-svc-btn">${ICONS.plus} Novo Item</button>
     </div>
-    ${services.length === 0 ? `<div class="card"><div class="empty-state">Nenhum servico cadastrado.</div></div>` : `
+    ${services.length === 0 ? `<div class="card"><div class="empty-state">Nenhum item cadastrado.</div></div>` : `
     <div class="services-grid">
       ${services.map((s) => `
         <div class="service-card" data-id="${s.id}">
           ${s.photoDataUrl ? `<div class="service-img-wrap"><img src="${escapeHtml(s.photoDataUrl)}" alt="${escapeHtml(s.name)}" class="service-img"/></div>` : ''}
-          <span class="category-tag">${escapeHtml(s.category)}</span>
+          <span class="category-tag">${escapeHtml(s.category || 'Geral')}</span>
+          ${s.itemType === 'Produto' ? '<span class="category-tag product-tag">Produto (entrega)</span>' : ''}
           <h3>${escapeHtml(s.name)}</h3>
           <p>${escapeHtml(s.description)}</p>
           <div class="service-footer">
             <span class="service-price">${formatMoney(s.price)}</span>
-            <span class="service-duration">${ICONS.clock} ${s.durationMinutes} min</span>
+            ${s.itemType === 'Produto'
+              ? '<span class="service-duration">Entrega</span>'
+              : `<span class="service-duration">${ICONS.clock} ${s.durationMinutes} min</span>`}
           </div>
           <div class="actions-cell service-card-actions">
             <button class="btn-icon edit-svc" data-id="${s.id}">${ICONS.pencil}</button>
@@ -2109,8 +2123,8 @@ async function renderServicosPage() {
     openServiceModal(services.find((s) => s.id === btn.dataset.id));
   }));
   mainEl().querySelectorAll('.delete-svc').forEach((btn) => btn.addEventListener('click', async () => {
-    if (!confirm('Excluir este servico?')) return;
-    try { await api('DELETE', `/api/services/${btn.dataset.id}`); toast('Servico excluido.'); renderServicosPage(); }
+    if (!confirm('Excluir este item?')) return;
+    try { await api('DELETE', `/api/services/${btn.dataset.id}`); toast('Item excluido.'); renderServicosPage(); }
     catch (e) { toast(e.message, true); }
   }));
 }
@@ -2278,6 +2292,7 @@ function openCashClosingModal() {
 
 function openServiceModal(svc) {
   const isEdit = !!svc;
+  const isProduct = svc?.itemType === 'Produto';
   let photoDataUrl = svc?.photoDataUrl || '';
   const bodyHtml = `
     <form id="svc-form">
@@ -2289,13 +2304,20 @@ function openServiceModal(svc) {
         </label>
       </div>
       <div class="form-grid">
+        <div class="form-field">
+          <label>Tipo *</label>
+          <select name="itemType" id="svc-type-select">
+            <option value="Servico" ${isProduct ? '' : 'selected'}>Serviço (agendamento)</option>
+            <option value="Produto" ${isProduct ? 'selected' : ''}>Produto (entrega)</option>
+          </select>
+        </div>
         <div class="form-field"><label>Categoria</label><input type="text" name="category" placeholder="Ex: Cabelo, Barba..." value="${svc ? escapeHtml(svc.category) : ''}" /></div>
-        <div class="form-field"><label>Nome *</label><input type="text" name="name" value="${svc ? escapeHtml(svc.name) : ''}" required /></div>
       </div>
+      <div class="form-field"><label>Nome *</label><input type="text" name="name" value="${svc ? escapeHtml(svc.name) : ''}" required /></div>
       <div class="form-field"><label>Descricao</label><textarea name="description">${svc ? escapeHtml(svc.description) : ''}</textarea></div>
       <div class="form-grid">
         <div class="form-field"><label>Preco (R$)</label><input type="number" step="0.01" name="price" value="${svc ? svc.price : ''}" /></div>
-        <div class="form-field"><label>Duracao (min) <span class="optional">(opcional)</span></label><input type="number" name="durationMinutes" value="${svc ? svc.durationMinutes : ''}" /></div>
+        <div class="form-field" id="svc-duration-field"><label>Duracao (min) <span class="optional">(opcional)</span></label><input type="number" name="durationMinutes" value="${svc ? svc.durationMinutes : ''}" /></div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" id="cancel-svc">Cancelar</button>
@@ -2303,8 +2325,13 @@ function openServiceModal(svc) {
       </div>
     </form>
   `;
-  showModal(isEdit ? 'Editar Servico' : 'Novo Servico', bodyHtml, (overlay) => {
+  showModal(isEdit ? 'Editar Item' : 'Novo Item', bodyHtml, (overlay) => {
     overlay.querySelector('#cancel-svc').addEventListener('click', closeModal);
+    const typeSelect = overlay.querySelector('#svc-type-select');
+    const durationField = overlay.querySelector('#svc-duration-field');
+    const syncType = () => { durationField.style.display = typeSelect.value === 'Produto' ? 'none' : ''; };
+    typeSelect.addEventListener('change', syncType);
+    syncType();
     overlay.querySelector('#svc-logo-input').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -2321,14 +2348,14 @@ function openServiceModal(svc) {
       e.preventDefault();
       const fd = new FormData(e.target);
       const payload = {
-        category: fd.get('category'), name: fd.get('name'), description: fd.get('description'),
+        itemType: fd.get('itemType'), category: fd.get('category'), name: fd.get('name'), description: fd.get('description'),
         price: fd.get('price'), durationMinutes: fd.get('durationMinutes'), photoDataUrl
       };
       try {
         if (isEdit) await api('PUT', `/api/services/${svc.id}`, payload);
         else await api('POST', '/api/services', payload);
         closeModal();
-        toast(isEdit ? 'Servico atualizado.' : 'Servico criado.');
+        toast(isEdit ? 'Item atualizado.' : 'Item criado.');
         renderServicosPage();
       } catch (err) { toast(err.message, true); }
     });

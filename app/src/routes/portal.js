@@ -31,7 +31,15 @@ const bookingSchema = z.object({
   })).min(1, 'Selecione pelo menos um servico'),
   dateTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Data/hora invalida (formato: YYYY-MM-DDTHH:MM)'),
   notes: z.string().max(500, 'Observacoes muito longas').optional(),
-  couponCode: z.string().max(30).optional()
+  couponCode: z.string().max(30).optional(),
+  addressStreet: z.string().max(150, 'Logradouro muito longo').optional(),
+  addressCity: z.string().max(100, 'Cidade muito longa').optional(),
+  addressState: z.string().max(50, 'Estado muito longo').optional(),
+  addressNumber: z.string().max(20, 'Numero muito longo').optional(),
+  addressComplement: z.string().max(100, 'Complemento muito longo').optional(),
+  addressDistrict: z.string().max(100, 'Bairro muito longo').optional(),
+  addressReference: z.string().max(150, 'Ponto de referencia muito longo').optional(),
+  addressLabel: z.string().max(50, 'Favoritar como muito longo').optional()
 });
 
 // Validation middleware
@@ -228,6 +236,26 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       }
       item.price = service.price;
       item.name = service.name;
+      item.itemType = service.itemType === 'Produto' ? 'Produto' : 'Servico';
+    }
+
+    const needsDelivery = services.some((item) => item.itemType === 'Produto');
+    const deliveryAddress = {
+      addressStreet: String(req.validated.addressStreet || '').trim(),
+      addressCity: String(req.validated.addressCity || '').trim(),
+      addressState: String(req.validated.addressState || '').trim(),
+      addressNumber: String(req.validated.addressNumber || '').trim(),
+      addressComplement: String(req.validated.addressComplement || '').trim(),
+      addressDistrict: String(req.validated.addressDistrict || '').trim(),
+      addressReference: String(req.validated.addressReference || '').trim(),
+      addressLabel: String(req.validated.addressLabel || '').trim()
+    };
+    if (needsDelivery) {
+      const requiredAddress = ['addressStreet', 'addressNumber', 'addressDistrict', 'addressCity', 'addressState'];
+      const missing = requiredAddress.filter((f) => !deliveryAddress[f]);
+      if (missing.length > 0) {
+        return res.status(400).json({ error: 'Endereco de entrega obrigatorio para produtos.', details: missing.join(', ') });
+      }
     }
 
     let client = store.queryScoped(
@@ -243,8 +271,11 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
         phone: clientPhone,
         email: clientEmail || '',
         notes: notes || '',
+        ...(needsDelivery ? deliveryAddress : {}),
         createdAt: new Date().toISOString()
       });
+    } else if (needsDelivery) {
+      client = store.update('clients', client.id, deliveryAddress);
     }
 
     const subtotal = services.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -304,6 +335,8 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       couponCode: appliedCoupon ? appliedCoupon.code : null,
       discount,
       subtotal,
+      hasDelivery: needsDelivery,
+      deliveryAddress: needsDelivery ? deliveryAddress : null,
       createdAt: new Date().toISOString()
     });
 
