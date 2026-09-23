@@ -143,6 +143,25 @@ function toMapsLink(address) {
   const q = encodeURIComponent(String(address).trim());
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
+function clientAddressParts(c) {
+  if (!c) return [];
+  const parts = [];
+  const street = [c.addressStreet, c.addressNumber].filter(Boolean).join(', ');
+  if (street) parts.push(street);
+  if (c.addressComplement) parts.push(c.addressComplement);
+  if (c.addressDistrict) parts.push(c.addressDistrict);
+  const cityState = [c.addressCity, c.addressState].filter(Boolean).join(' - ');
+  if (cityState) parts.push(cityState);
+  return parts;
+}
+function clientAddressLine(c) {
+  return clientAddressParts(c).join(' - ');
+}
+function clientAddressMapsLink(c) {
+  const parts = clientAddressParts(c);
+  if (parts.length === 0) return '';
+  return toMapsLink(parts.join(', '));
+}
 function formatDateTime(iso) {
   if (!iso) return '-';
   const d = new Date(iso);
@@ -1862,14 +1881,27 @@ async function renderClientesPage() {
     <div class="card">
       ${clients.length === 0 ? `<div class="empty-state">Nenhum cliente cadastrado.</div>` : `
       <table>
-        <thead><tr><th>Nome</th><th>Contato</th><th>Observacoes</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Contato</th><th>Endereco</th><th>Observacoes</th><th></th></tr></thead>
         <tbody>
-          ${clients.map((c) => `
+          ${clients.map((c) => {
+            const addressLine = clientAddressLine(c);
+            const mapsLink = clientAddressMapsLink(c);
+            return `
             <tr data-id="${c.id}">
               <td><div class="name-cell"><span class="avatar-dot">${ICONS.users}</span>${escapeHtml(c.name)}</div></td>
               <td>
                 ${c.email ? `<div class="contact-line">${ICONS.mail}${escapeHtml(c.email)}</div>` : ''}
                 ${c.phone ? `<div class="contact-line">${ICONS.phone}${escapeHtml(c.phone)}</div>` : ''}
+              </td>
+              <td class="cell-muted">
+                ${addressLine ? `
+                  <div class="address-block">
+                    ${c.addressLabel ? `<div class="address-label">${escapeHtml(c.addressLabel)}</div>` : ''}
+                    <div class="address-line">${escapeHtml(addressLine)}</div>
+                    ${c.addressReference ? `<div class="address-line">Ref.: ${escapeHtml(c.addressReference)}</div>` : ''}
+                    ${mapsLink ? `<a class="maps-link-inline" href="${mapsLink}" target="_blank" rel="noopener">${ICONS.globe} Ver no Maps</a>` : ''}
+                  </div>
+                ` : '&mdash;'}
               </td>
               <td class="cell-muted">${escapeHtml(c.notes) || '&mdash;'}</td>
               <td class="actions-cell">
@@ -1877,7 +1909,7 @@ async function renderClientesPage() {
                 <button class="btn-icon danger delete-client" data-id="${c.id}">${ICONS.trash}</button>
               </td>
             </tr>
-          `).join('')}
+          `;}).join('')}
         </tbody>
       </table>`}
     </div>
@@ -1895,14 +1927,32 @@ async function renderClientesPage() {
 
 function openClientModal(client) {
   const isEdit = !!client;
+  const val = (field) => (client ? escapeHtml(client[field]) : '');
   const bodyHtml = `
     <form id="client-form">
-      <div class="form-field"><label>Nome *</label><input type="text" name="name" value="${client ? escapeHtml(client.name) : ''}" required /></div>
+      <div class="form-field"><label>Nome *</label><input type="text" name="name" value="${val('name')}" required /></div>
       <div class="form-grid">
-        <div class="form-field"><label>Email</label><input type="email" name="email" value="${client ? escapeHtml(client.email) : ''}" /></div>
-        <div class="form-field"><label>Telefone</label><input type="text" name="phone" value="${client ? escapeHtml(client.phone) : ''}" /></div>
+        <div class="form-field"><label>Email</label><input type="email" name="email" value="${val('email')}" /></div>
+        <div class="form-field"><label>Telefone</label><input type="text" name="phone" value="${val('phone')}" /></div>
       </div>
-      <div class="form-field"><label>Observacoes</label><textarea name="notes">${client ? escapeHtml(client.notes) : ''}</textarea></div>
+      <div class="associate-divider"></div>
+      <h3 style="margin:0 0 4px 0;font-size:16px;">Endereco</h3>
+      <p style="color:var(--text-muted);font-size:12.5px;margin:0 0 16px 0;">Padronizado para entrega (delivery).</p>
+      <div class="form-field"><label>Logradouro</label><input type="text" name="addressStreet" value="${val('addressStreet')}" placeholder="ex Rua do Ancião" /></div>
+      <div class="form-grid">
+        <div class="form-field"><label>Cidade</label><input type="text" name="addressCity" value="${val('addressCity')}" placeholder="ex São Paulo" /></div>
+        <div class="form-field"><label>Estado</label><input type="text" name="addressState" value="${val('addressState')}" placeholder="ex SP" /></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label>Número</label><input type="text" name="addressNumber" value="${val('addressNumber')}" /></div>
+        <div class="form-field"><label>Complemento</label><input type="text" name="addressComplement" value="${val('addressComplement')}" placeholder="Ex. Casa, apartamento" /></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field"><label>Bairro</label><input type="text" name="addressDistrict" value="${val('addressDistrict')}" placeholder="ex Chácara Maria Trindade" /></div>
+        <div class="form-field"><label>Ponto de referência</label><input type="text" name="addressReference" value="${val('addressReference')}" placeholder="Ex. Perto da padaria" /></div>
+      </div>
+      <div class="form-field"><label>Favoritar como</label><input type="text" name="addressLabel" value="${val('addressLabel')}" placeholder="Ex. Minha casa" /></div>
+      <div class="form-field"><label>Observacoes</label><textarea name="notes">${val('notes')}</textarea></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" id="cancel-client">Cancelar</button>
         <button type="submit" class="btn btn-primary">${isEdit ? 'Salvar Alteracoes' : 'Criar Cliente'}</button>
@@ -1914,7 +1964,20 @@ function openClientModal(client) {
     overlay.querySelector('#client-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const payload = { name: fd.get('name'), email: fd.get('email'), phone: fd.get('phone'), notes: fd.get('notes') };
+      const payload = {
+        name: fd.get('name'),
+        email: fd.get('email'),
+        phone: fd.get('phone'),
+        notes: fd.get('notes'),
+        addressStreet: fd.get('addressStreet'),
+        addressCity: fd.get('addressCity'),
+        addressState: fd.get('addressState'),
+        addressNumber: fd.get('addressNumber'),
+        addressComplement: fd.get('addressComplement'),
+        addressDistrict: fd.get('addressDistrict'),
+        addressReference: fd.get('addressReference'),
+        addressLabel: fd.get('addressLabel')
+      };
       try {
         if (isEdit) await api('PUT', `/api/clients/${client.id}`, payload);
         else await api('POST', '/api/clients', payload);

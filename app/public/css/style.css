@@ -782,6 +782,10 @@ select.status-select {
 
 .contact-line { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--text-muted); }
 .contact-line + .contact-line { margin-top: 3px; }
+.address-block { font-size: 13px; }
+.address-block .address-label { font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.address-block .address-line { color: var(--text-muted); }
+.address-block .address-line + .address-line { margin-top: 2px; }
 .name-cell { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 
 .avatar-dot {
