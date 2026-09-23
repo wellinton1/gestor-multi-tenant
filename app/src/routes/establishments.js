@@ -84,6 +84,20 @@ function normalizeLogoDataUrl(value) {
   return '';
 }
 
+// Nome de loja e unico na plataforma (ignora caixa, acentos e espacos extras).
+function normalizeStoreName(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+function isStoreNameTaken(name, ignoreId) {
+  const target = normalizeStoreName(name);
+  if (!target) return false;
+  return store.all('establishments').some((row) => row.id !== ignoreId && normalizeStoreName(row.name) === target);
+}
+
 // Public listing of tenants for login selection.
 router.get('/', (req, res) => {
   const serialize = (row) => ({
@@ -119,12 +133,13 @@ router.post('/', (req, res, next) => {
   try {
     const user = store.findById('users', req.session.userId);
     if (!user) return res.status(401).json({ error: 'Nao autenticado.' });
-    if (user.role !== 'admin') {
-      return res.status(403).json({ error: 'Apenas administradores podem criar estabelecimentos.' });
-    }
     const allowedIds = resolveAllowedIds(user);
-    if (allowedIds !== null) {
-      return res.status(403).json({ error: 'Acesso ao estabelecimento nao autorizado.' });
+    const isGlobal = allowedIds === null;
+    // Usuario sem nenhuma loja associada (cadastro pendente) pode criar a
+    // propria loja e se tornar o administrador dela.
+    const isUnassigned = Array.isArray(allowedIds) && allowedIds.length === 0;
+    if (!isGlobal && !isUnassigned) {
+      return res.status(403).json({ error: 'Apenas administradores podem criar estabelecimentos.' });
     }
 
     const { name, niche, phone, address, description, logoDataUrl, expirationPeriod } = req.body || {};
@@ -133,9 +148,13 @@ router.post('/', (req, res, next) => {
     if (!nameValue || !nicheValue) {
       return res.status(400).json({ error: 'Nome e nicho sao obrigatorios.' });
     }
+    if (isStoreNameTaken(nameValue)) {
+      return res.status(409).json({ error: 'Ja existe uma loja com este nome. Escolha outro nome.' });
+    }
     const themeSlug = resolveTheme(nicheValue);
-    const row = store.insert('establishments', {
-      id: uuid(),
+    const newId = uuid();
+    const insertRow = () => store.insert('establishments', {
+      id: newId,
       name: nameValue,
       niche: nicheValue,
       theme: themeSlug,           // tema premium derivado do nicho
@@ -150,6 +169,17 @@ router.post('/', (req, res, next) => {
       expirationPeriod: String(expirationPeriod || 'Sem expiracao').trim(),
       createdAt: new Date().toISOString()
     });
+    // A nova loja e o proprio tenant: a escrita roda no contexto dela para
+    // passar pelo RLS (usuario sem loja nao tem contexto de admin global).
+    const row = isUnassigned ? runWithTenant(newId, insertRow) : insertRow();
+    if (isUnassigned) {
+      // Dono da nova loja: vira admin dela e ja entra com ela selecionada.
+      store.update('users', user.id, {
+        role: 'admin',
+        allowedEstablishmentIds: [row.id]
+      });
+      req.session.establishmentId = row.id;
+    }
     res.status(201).json(row);
   } catch (err) {
     next(err);
@@ -169,6 +199,17 @@ router.put('/:id', (req, res, next) => {
     }
     const { name, phone, address, description, logoDataUrl, businessHours, accentOverride, theme, plan } = req.body || {};
 
+    // Nome continua unico ao renomear (ignora a propria loja na comparacao).
+    const newName = name !== undefined ? String(name).trim() : est.name;
+    if (name !== undefined) {
+      if (!newName) {
+        return res.status(400).json({ error: 'Nome nao pode ficar vazio.' });
+      }
+      if (isStoreNameTaken(newName, est.id)) {
+        return res.status(409).json({ error: 'Ja existe uma loja com este nome. Escolha outro nome.' });
+      }
+    }
+
     // Customizacao de cor — aceita nome da paleta do tema OU cor livre hex (#RRGGBB).
     const currentTheme = est.theme || resolveTheme(est.niche);
     if (accentOverride !== undefined && accentOverride !== null && accentOverride !== '') {
@@ -185,7 +226,7 @@ router.put('/:id', (req, res, next) => {
     const newPlan = (isGlobalAdminUser && plan && ['free', 'pro'].includes(plan)) ? plan : (est.plan || 'free');
 
     const updated = runWithTenant(est.id, () => store.update('establishments', req.params.id, {
-      name: name !== undefined ? String(name).trim() : est.name,
+      name: newName,
       phone: phone !== undefined ? String(phone).trim() : est.phone,
       address: address !== undefined ? String(address).trim() : est.address,
       description: description !== undefined ? String(description).trim() : est.description,

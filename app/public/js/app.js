@@ -405,20 +405,35 @@ function renderPendingApproval() {
       <div class="login-card" style="text-align:center;">
         <div class="brand-icon">${ICONS.clock}</div>
         <h1>Cadastro recebido!</h1>
-        <p class="subtitle">Aguardando aprovacao do administrador</p>
+        <p class="subtitle">Crie seu estabelecimento ou aguarde aprovacao</p>
         <div class="hint-box" style="text-align:left;">
           Sua conta (<strong>${escapeHtml(currentUser.email)}</strong>) foi criada com sucesso.
-          Para comecar a usar o sistema, o administrador precisa associar seu usuario a um estabelecimento.
+          Crie o seu proprio estabelecimento para comecar agora, ou aguarde o administrador
+          associar seu usuario a uma loja existente.
           <br><br>
-          Assim que a associacao for feita, entre novamente para acessar o painel.
+          Assim que estiver tudo pronto, entre novamente para acessar o painel.
         </div>
-        <button class="btn btn-secondary" id="pending-logout-btn" style="margin-top:16px;">Sair</button>
-        <button class="btn btn-primary" id="pending-refresh-btn" style="margin-top:12px;">Ja fui aprovado, entrar</button>
+        <button class="btn btn-primary" id="pending-create-store-btn" style="margin-top:16px;">${ICONS.plus} Novo Estabelecimento</button>
+        <button class="btn btn-secondary" id="pending-refresh-btn" style="margin-top:12px;">Ja fui aprovado, entrar</button>
+        <button class="btn btn-secondary" id="pending-logout-btn" style="margin-top:12px;">Sair</button>
       </div>
     </div>
   `;
   document.getElementById('pending-theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('pending-logout-btn').addEventListener('click', logout);
+  document.getElementById('pending-create-store-btn').addEventListener('click', () => {
+    openNewEstablishmentModal(async () => {
+      try {
+        currentUser = await api('GET', '/api/auth/me');
+        currentEstablishment = await api('GET', '/api/establishments/current');
+        location.hash = '#/dashboard';
+        render();
+      } catch (e) {
+        toast(e.message, true);
+        render();
+      }
+    });
+  });
   document.getElementById('pending-refresh-btn').addEventListener('click', async () => {
     try {
       currentUser = await api('GET', '/api/auth/me');
@@ -1178,7 +1193,7 @@ function openCreateUserModal(establishment) {
   });
 }
 
-function openNewEstablishmentModal() {
+function openNewEstablishmentModal(onCreated) {
   const bodyHtml = `
     <form id="new-est-form">
       <div class="logo-upload-row">
@@ -1262,7 +1277,7 @@ function openNewEstablishmentModal() {
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
-        await api('POST', '/api/establishments', {
+        const created = await api('POST', '/api/establishments', {
           name: fd.get('name'),
           niche: fd.get('niche'),
           phone: fd.get('phone'),
@@ -1273,7 +1288,8 @@ function openNewEstablishmentModal() {
         });
         closeModal();
         toast('Estabelecimento criado com sucesso.');
-        renderSelector();
+        if (typeof onCreated === 'function') onCreated(created);
+        else renderSelector();
       } catch (err) { toast(err.message, true); }
     });
   });
