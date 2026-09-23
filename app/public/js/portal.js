@@ -101,6 +101,11 @@ let loadingSlots = false;
 let appliedCoupon = null;
 
 async function boot() {
+  // URLs contaminadas (ex.: /pizza-boa/<id>#/dashboard de cache/Historico):
+  // o portal nao usa hash para nada, entao limpa para a URL ficar canônica.
+  try {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+  } catch (e) { /* ignore */ }
   const id = getEstablishmentId();
   root.innerHTML = `<div class="loading-state">Carregando...</div>`;
   try {

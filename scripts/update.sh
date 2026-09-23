@@ -266,6 +266,22 @@ if command -v visudo >/dev/null 2>&1; then
 fi
 rm -f "$SUDOERS_TMP"
 
+# ---------- traz o codigo novo (obrigatorio antes do rsync) ----------
+# O rsync abaixo copia do clone local para o INSTALL_DIR: sem git pull aqui,
+# ele republicaria o codigo velho e nada mudaria no ar.
+if [ -d "$PROJECT_ROOT/.git" ]; then
+  echo "Baixando codigo novo (git pull em $PROJECT_ROOT, branch $(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo '?'))..."
+  if git -C "$PROJECT_ROOT" pull --ff-only; then
+    echo "Codigo atualizado."
+  else
+    echo "AVISO: git pull falhou (alteracao local, branch sem upstream ou sem rede)."
+    echo "Veja com: git -C \"$PROJECT_ROOT\" status --short"
+    echo "Seguindo com o codigo que ja esta no clone..."
+  fi
+else
+  echo "AVISO: $PROJECT_ROOT nao e um clone git; usando os arquivos locais como estao."
+fi
+
 echo "Fazendo backup rapido antes de atualizar..."
 bash "$SCRIPT_DIR/backup.sh" "$INSTALL_DIR" "/opt/backups-gestor-multi-tenant" || true
 
@@ -292,5 +308,11 @@ echo "Reiniciando o servico..."
 systemctl start "$SERVICE_NAME"
 sleep 2
 systemctl status "$SERVICE_NAME" --no-pager
+
+# Mostra exatamente qual codigo foi implantado (confere com o GitHub).
+DEPLOYED_SHA="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
+DEPLOYED_SUBJECT="$(git -C "$PROJECT_ROOT" log -1 --format=%s 2>/dev/null || true)"
+DEPLOYED_BRANCH="$(git -C "$PROJECT_ROOT" branch --show-current 2>/dev/null || echo '?')"
+echo "Codigo implantado: $DEPLOYED_SHA ($DEPLOYED_BRANCH) $DEPLOYED_SUBJECT"
 
 echo "Atualizacao concluida."

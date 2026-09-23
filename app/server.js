@@ -68,6 +68,14 @@ app.set('trust proxy', 1);
 const GLOBAL_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 600)
   : (Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 1000);
+// Login: maleável p/ gente, duro p/ robô.
+// - Conta só FALHA (skipSuccessfulRequests): login certo não gasta o balde,
+//   então errar a senha algumas vezes e acertar nunca trava o admin;
+// - 30 falhas / 15 min por IP (antes: 10 tentativas totais / 1 min);
+// - GETs (me, google-config, callback) nunca contam.
+// Ajustável via .env (RATE_LIMIT_AUTH_MAX / RATE_LIMIT_AUTH_WINDOW_MIN).
+const AUTH_RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_AUTH_MAX) || (isProduction ? 30 : 200);
+const AUTH_RATE_LIMIT_WINDOW_MIN = Number(process.env.RATE_LIMIT_AUTH_WINDOW_MIN) || 15;
 const PASSWORD_RATE_LIMIT_MAX = isProduction
   ? (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 6)
   : (Number(process.env.RATE_LIMIT_PASSWORD_MAX) || 50);
@@ -130,6 +138,19 @@ const globalLimiter = rateLimit({
   legacyHeaders: false
 });
 app.use('/api', globalLimiter);
+
+// Rate limit do login/setup: só conta resposta de erro (4xx/5xx).
+// Login com sucesso (200) zera a pressão do balde; força bruta (só 401)
+// estoura o teto e recebe 429 com Retry-After.
+const authLimiter = rateLimit({
+  windowMs: AUTH_RATE_LIMIT_WINDOW_MIN * 60 * 1000,
+  max: AUTH_RATE_LIMIT_MAX,
+  skipSuccessfulRequests: true,
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+  message: { error: `Muitas tentativas incorretas seguidas. Aguarde ${AUTH_RATE_LIMIT_WINDOW_MIN} min e tente de novo.` },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // Rate limit for password change routes
 const passwordLimiter = rateLimit({
@@ -253,12 +274,12 @@ app.use((req, res, next) => {
 // estar pronto — ver boot() no final do arquivo).
 
 // API routes
-// Sem rate-limit dedicado no login: o admin precisa entrar sempre.
-// (Protecao restante: limite global da API + bcrypt + erro generico.)
-app.use('/api/auth', authRoutes, passwordRecoveryRoutes); // login + forgot/reset
+// Montagem unica: os dois routers no mesmo app.use para o authLimiter contar
+// 1x por request (montar 2x com o mesmo limiter contava 2 tentativas por clique).
+app.use('/api/auth', authLimiter, authRoutes, passwordRecoveryRoutes); // login + forgot/reset
 
 app.use('/api/2fa', require('./src/middleware/auth').requireLogin, twoFactorRoutes);
-app.use('/api/setup', setupRoutes);
+app.use('/api/setup', authLimiter, setupRoutes);
 app.use('/api/password', require('./src/middleware/auth').requireLogin, passwordLimiter, passwordRoutes);
 app.use('/api/establishments', establishmentsRoutes);
 app.use('/api/clients', clientsRoutes);
