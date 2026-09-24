@@ -44,6 +44,23 @@ router.get('/api-key', (req, res) => {
   res.json({ configured: config.configured });
 });
 
+// Compatibilidade com o modal de pagamento do painel (openPaymentModal),
+// que envia apenas { apiKey }. Assume o provedor padrao (abacatepay).
+router.put('/api-key', (req, res, next) => {
+  try {
+    const estId = req.session.establishmentId;
+    const { apiKey } = req.body || {};
+    const key = String(apiKey || '').trim();
+    if (!key) return res.status(400).json({ error: 'Informe a chave da API.' });
+    store.update('establishments', estId, {
+      pixProvider: 'abacatepay',
+      pixApiKey: key,
+      abacatePayApiKey: key
+    });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
 router.put('/config', async (req, res, next) => {
   try {
     const estId = req.session.establishmentId;

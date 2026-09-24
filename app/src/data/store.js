@@ -47,7 +47,7 @@ function isValidDataUri(value) {
   return true;
 }
 
-const NO_ESCAPE_KEYS = new Set(['passwordHash', 'id', 'createdAt', 'passwordChangedAt', 'abacatePayApiKey']);
+const NO_ESCAPE_KEYS = new Set(['passwordHash', 'id', 'createdAt', 'passwordChangedAt', 'abacatePayApiKey', 'pixApiKey', 'pixProvider', 'pixBaseUrl', 'pixExtraHeaders']);
 
 function sanitizeValue(value, fieldName) {
   if (typeof value !== 'string') return value;
