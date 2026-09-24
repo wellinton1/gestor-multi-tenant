@@ -17,12 +17,11 @@ router.use(requireLogin, requireEstablishment);
 function getPaymentConfig(estId) {
   const est = store.findById('establishments', estId);
   if (!est) return null;
-  return {
-    provider: est.pixProvider || 'abacatepay',
-    apiKey: est.pixApiKey || est.abacatePayApiKey || '',
-    baseUrl: est.pixBaseUrl || '',
-    extraHeaders: est.pixExtraHeaders ? JSON.parse(est.pixExtraHeaders) : {}
-  };
+  const provider = est.pixProvider || 'abacatepay';
+  const apiKey = est.pixApiKey || est.abacatePayApiKey || '';
+  const baseUrl = est.pixBaseUrl || '';
+  const extraHeaders = est.pixExtraHeaders ? JSON.parse(est.pixExtraHeaders) : {};
+  return { provider, apiKey, baseUrl, extraHeaders, configured: !!(apiKey && provider) };
 }
 
 router.get('/providers', (req, res) => {
@@ -33,7 +32,7 @@ router.get('/config', (req, res) => {
   const config = getPaymentConfig(req.session.establishmentId);
   if (!config) return res.json({ configured: false });
   res.json({
-    configured: !!config.apiKey,
+    configured: config.configured,
     provider: config.provider,
     masked: config.apiKey ? '...' + config.apiKey.slice(-6) : null
   });
@@ -83,7 +82,7 @@ router.delete('/config', (req, res, next) => {
 router.post('/create-customer', async (req, res, next) => {
   try {
     const config = getPaymentConfig(req.session.establishmentId);
-    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
+    if (!config?.configured) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { email, name, cellphone, taxId } = req.body || {};
     if (!email) return res.status(400).json({ error: 'Email do cliente é obrigatório.' });
@@ -96,7 +95,7 @@ router.post('/create-customer', async (req, res, next) => {
 router.post('/create-checkout', async (req, res, next) => {
   try {
     const config = getPaymentConfig(req.session.establishmentId);
-    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
+    if (!config?.configured) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { items, customerId, methods, returnUrl, completionUrl } = req.body || {};
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -111,7 +110,7 @@ router.post('/create-checkout', async (req, res, next) => {
 router.post('/create-pix', async (req, res, next) => {
   try {
     const config = getPaymentConfig(req.session.establishmentId);
-    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
+    if (!config?.configured) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { amount, description, expiresIn, customer } = req.body || {};
     if (!amount || amount <= 0) {
@@ -126,7 +125,7 @@ router.post('/create-pix', async (req, res, next) => {
 router.get('/check/:id', async (req, res, next) => {
   try {
     const config = getPaymentConfig(req.session.establishmentId);
-    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
+    if (!config?.configured) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const result = await checkPixPayment(config.provider, config.apiKey, req.params.id, config);
     res.json(result);
@@ -136,7 +135,7 @@ router.get('/check/:id', async (req, res, next) => {
 router.post('/create-product', async (req, res, next) => {
   try {
     const config = getPaymentConfig(req.session.establishmentId);
-    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
+    if (!config?.configured) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const { externalId, name, price, description } = req.body || {};
     if (!externalId || !name || !price) {
@@ -151,7 +150,7 @@ router.post('/create-product', async (req, res, next) => {
 router.get('/products', async (req, res, next) => {
   try {
     const config = getPaymentConfig(req.session.establishmentId);
-    if (!config?.apiKey) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
+    if (!config?.configured) return res.status(400).json({ error: 'Configure a chave da API de pagamentos nas Configurações.' });
 
     const result = await listProducts(config.provider, config.apiKey, config);
     res.json(result);
