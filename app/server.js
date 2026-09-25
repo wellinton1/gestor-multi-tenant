@@ -105,10 +105,10 @@ app.use(helmet({
       // 'unsafe-inline': o frontend usa atributos style= em toda parte (padrao
       // do projeto). NAO adicionar nonce aqui — a presenca de nonce/hash anula
       // o 'unsafe-inline' segundo a spec do CSP.
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'"],
-      fontSrc: ["'self'"],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
