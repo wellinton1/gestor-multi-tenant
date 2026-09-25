@@ -176,8 +176,12 @@ router.get('/:establishmentId/available-times', validate(availableTimesQuerySche
     const closeMinutes = closeH * 60 + closeM;
 
     const now = new Date();
-    const isToday = selectedDate.getTime() === today.getTime();
-    const currentMinutes = isToday ? now.getHours() * 60 + now.getMinutes() : -1;
+    const nowBrazil = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const todayBrazil = new Date(nowBrazil);
+    todayBrazil.setHours(0, 0, 0, 0);
+    const selectedDateBrazil = new Date(date + 'T12:00:00');
+    const isToday = selectedDateBrazil.getTime() === todayBrazil.getTime();
+    const currentMinutes = isToday ? nowBrazil.getHours() * 60 + nowBrazil.getMinutes() : -1;
 
     for (let m = openMinutes; m < closeMinutes; m += 30) {
       const hh = String(Math.floor(m / 60)).padStart(2, '0');

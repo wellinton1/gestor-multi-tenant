@@ -99,6 +99,7 @@ let selectedTime = null;
 let availableSlots = [];
 let loadingSlots = false;
 let appliedCoupon = null;
+let bookAndPay = false; // flag para diferenciar "Apenas Agendar" vs "Agendar e Pagar"
 
 async function boot() {
   // URLs contaminadas (ex.: /pizza-boa/<id>#/dashboard de cache/Historico):
@@ -152,6 +153,7 @@ function renderPage() {
   const needsDelivery = (isPizzaria && safeSelectedServices.length > 0) || hasProducts;
   const showDateTime = hasServices && !hasProducts;
   const showDeliveryAddress = needsDelivery && !hasServices;
+  const hasPayment = establishment.hasPayment === true;
   const draft = captureBookingDraft();
 
   function safeMap(arr, fn) {
@@ -280,7 +282,14 @@ function renderPage() {
       </div>
       <div class="portal-bottom-bar">
         <div class="bottom-summary"><span>${itemCount} item${itemCount === 1 ? '' : 's'}</span><strong>${formatMoney(appliedCoupon ? subtotal - appliedCoupon.discount : subtotal)}</strong></div>
-        <button type="button" class="btn btn-primary bottom-book-btn" id="bottom-book-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Agendar Horário'}</button>
+        <div class="bottom-actions" style="display:flex;gap:8px;">
+          ${hasPayment ? `
+            <button type="button" class="btn btn-secondary bottom-book-btn" id="bottom-book-only-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Apenas Agendar'}</button>
+            <button type="button" class="btn btn-primary bottom-book-pay-btn" id="bottom-book-pay-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Agendar e Pagar'}</button>
+          ` : `
+            <button type="button" class="btn btn-primary bottom-book-btn" id="bottom-book-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Agendar Horário'}</button>
+          `}
+        </div>
       </div>
     </div>
   `;
@@ -342,7 +351,8 @@ function renderPage() {
   });
 
   const form = document.getElementById('booking-form');
-  const submitBooking = async () => {
+  const submitBooking = async (shouldPay = false) => {
+    bookAndPay = shouldPay;
     if (!establishment) {
       alert('Erro: Estabelecimento nao carregado. Recarregue a pagina.');
       return;
@@ -413,11 +423,15 @@ function renderPage() {
       alert('Por favor, preencha nome e telefone.');
       return;
     }
-    const bottomBtn = document.getElementById('bottom-book-btn');
-    if (bottomBtn) {
-      bottomBtn.disabled = true;
-      bottomBtn.textContent = 'Enviando...';
-    }
+    payload.bookAndPay = bookAndPay;
+    const bottomBtnBook = document.getElementById('bottom-book-btn');
+    const bottomBtnBookOnly = document.getElementById('bottom-book-only-btn');
+    const bottomBtnBookPay = document.getElementById('bottom-book-pay-btn');
+    const allBottomBtns = [bottomBtnBook, bottomBtnBookOnly, bottomBtnBookPay].filter(Boolean);
+    allBottomBtns.forEach(btn => {
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+    });
     try {
       const csrfToken = getCsrfToken();
       const headers = { 'Content-Type': 'application/json' };
@@ -450,7 +464,7 @@ function renderPage() {
           clientName: payload.clientName,
           clientEmail: payload.clientEmail,
           clientPhone: payload.clientPhone
-        });
+        }, bookAndPay);
       } catch (e) {
         console.error('renderSuccess error:', e);
       }
@@ -461,16 +475,20 @@ function renderPage() {
       }
     } catch (err) {
       alert(err.message);
-      if (bottomBtn) {
-        bottomBtn.disabled = false;
-        bottomBtn.textContent = 'Agendar Horário';
-      }
+      const bottomBtnBook = document.getElementById('bottom-book-btn');
+      const bottomBtnBookOnly = document.getElementById('bottom-book-only-btn');
+      const bottomBtnBookPay = document.getElementById('bottom-book-pay-btn');
+      const allBottomBtns = [bottomBtnBook, bottomBtnBookOnly, bottomBtnBookPay].filter(Boolean);
+      allBottomBtns.forEach(btn => {
+        btn.disabled = false;
+        btn.textContent = btn.id === 'bottom-book-pay-btn' ? 'Agendar e Pagar' : 'Agendar Horário';
+      });
     }
   };
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    submitBooking();
+    submitBooking(false);
   });
 
   const bottomBtn = document.getElementById('bottom-book-btn');
@@ -518,11 +536,26 @@ function renderPage() {
 });
     }
     
-  const bottomButton = document.querySelector('.bottom-book-btn');
-  if (bottomButton) {
-    bottomButton.addEventListener('click', () => {
+  const bottomBtnBook = document.getElementById('bottom-book-btn');
+  const bottomBtnBookOnly = document.getElementById('bottom-book-only-btn');
+  const bottomBtnBookPay = document.getElementById('bottom-book-pay-btn');
+  
+  const handleBottomBookClick = (shouldPay) => {
+    if (shouldPay) {
+      submitBooking(true);
+    } else {
       document.getElementById('booking-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+    }
+  };
+
+  if (bottomBtnBook) {
+    bottomBtnBook.addEventListener('click', () => handleBottomBookClick(false));
+  }
+  if (bottomBtnBookOnly) {
+    bottomBtnBookOnly.addEventListener('click', () => submitBooking(false));
+  }
+  if (bottomBtnBookPay) {
+    bottomBtnBookPay.addEventListener('click', () => submitBooking(true));
   }
 
   // Coupon apply button
@@ -583,7 +616,7 @@ function startBookingCooldown() {
   }, 1000);
 }
 
-function renderSuccess(bookingInfo) {
+function renderSuccess(bookingInfo, shouldPay = false) {
   const info = bookingInfo || {};
   const hasPayment = info.hasPayment && info.total > 0;
   const subtotal = info.subtotal || info.total;
@@ -666,6 +699,10 @@ function renderSuccess(bookingInfo) {
 
   if (hasPayment) {
     const payBtn = overlay.querySelector('#pay-pix-btn');
+    // Auto-trigger payment if user clicked "Agendar e Pagar"
+    if (shouldPay && payBtn) {
+      setTimeout(() => payBtn.click(), 100);
+    }
     const cardBtn = overlay.querySelector('#pay-card-btn');
     const resultEl = overlay.querySelector('#pix-result');
     const amountOpts = overlay.querySelectorAll('.pay-amount-opt');
