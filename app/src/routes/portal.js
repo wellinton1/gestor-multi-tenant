@@ -27,9 +27,10 @@ const bookingSchema = z.object({
   clientEmail: z.string().email('Email invalido').max(100).optional().or(z.literal('')),
   selectedServices: z.array(z.object({
     id: z.string().uuid('ID de servico invalido'),
-    qty: z.number().int().positive('Quantidade deve ser positiva').max(10, 'Quantidade maxima 10')
+    qty: z.number().int().positive('Quantidade deve ser positiva').max(10, 'Quantidade maxima 10'),
+    itemType: z.enum(['Produto', 'Servico']).optional()
   })).min(1, 'Selecione pelo menos um servico'),
-  dateTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Data/hora invalida (formato: YYYY-MM-DDTHH:MM)'),
+  dateTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Data/hora invalida (formato: YYYY-MM-DDTHH:MM)').optional(),
   notes: z.string().max(500, 'Observacoes muito longas').optional(),
   couponCode: z.string().max(30).optional(),
   addressStreet: z.string().max(150, 'Logradouro muito longo').optional(),
@@ -40,6 +41,51 @@ const bookingSchema = z.object({
   addressDistrict: z.string().max(100, 'Bairro muito longo').optional(),
   addressReference: z.string().max(150, 'Ponto de referencia muito longo').optional(),
   addressLabel: z.string().max(50, 'Favoritar como muito longo').optional()
+}).superRefine((data, ctx) => {
+  const hasProducts = data.selectedServices.some((s) => s.itemType === 'Produto');
+  const hasServices = data.selectedServices.some((s) => s.itemType === 'Servico');
+  
+  // Se apenas serviços: dateTime é obrigatório
+  if (hasServices && !hasProducts) {
+    if (!data.dateTime) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dateTime'],
+        message: 'Data e horario sao obrigatorios para servicos'
+      });
+    }
+  }
+  
+  // Se apenas produtos: endereço de entrega é obrigatório
+  if (hasProducts && !hasServices) {
+    const requiredFields = ['addressStreet', 'addressCity', 'addressState', 'addressNumber', 'addressDistrict'];
+    for (const field of requiredFields) {
+      if (!data[field]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} e obrigatorio para produtos`
+        });
+      }
+    }
+  }
+  
+  // Rejeitar payloads inconsistentes
+  if (hasProducts && data.dateTime) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dateTime'],
+      message: 'Produtos nao devem ter data/hora de agendamento'
+    });
+  }
+  
+  if (hasServices && (data.addressStreet || data.addressCity || data.addressState || data.addressNumber || data.addressDistrict)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['addressStreet'],
+      message: 'Servicos nao devem ter endereco de entrega'
+    });
+  }
 });
 
 // Validation middleware
@@ -236,10 +282,12 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       }
       item.price = service.price;
       item.name = service.name;
-      item.itemType = service.itemType === 'Produto' ? 'Produto' : 'Servico';
+      // itemType já vem validado do schema
     }
 
-    const needsDelivery = est.niche === 'Pizzaria' || services.some((item) => item.itemType === 'Produto');
+    const hasProducts = services.some((item) => item.itemType === 'Produto');
+    const hasServices = services.some((item) => item.itemType === 'Servico');
+    const needsDelivery = est.niche === 'Pizzaria' || hasProducts;
     const deliveryAddress = {
       addressStreet: String(req.validated.addressStreet || '').trim(),
       addressCity: String(req.validated.addressCity || '').trim(),
@@ -319,15 +367,13 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       }
     }
 
-    const serviceName = buildServiceSummary(services);
-    const appointment = store.insert('appointments', {
+    const appointmentData = {
       id: uuid(),
       establishmentId: est.id,
       clientId: client.id,
       employeeId: null,
       serviceId: services[0].id,
       serviceName,
-      dateTime,
       total,
       status: 'Pendente',
       source: 'portal',
@@ -338,7 +384,14 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       hasDelivery: needsDelivery,
       deliveryAddress: needsDelivery ? deliveryAddress : null,
       createdAt: new Date().toISOString()
-    });
+    };
+    
+    // Apenas serviços têm data/hora de agendamento
+    if (hasServices && !hasProducts) {
+      appointmentData.dateTime = dateTime;
+    }
+    
+    const appointment = store.insert('appointments', appointmentData);
 
     const hasPayment = !!(est.pixApiKey || est.abacatePayApiKey);
     res.status(201).json({ ok: true, appointment, total, subtotal, discount, appliedCoupon, hasPayment });

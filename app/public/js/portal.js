@@ -147,7 +147,11 @@ function renderPage() {
   const itemCount = safeSelectedServices.reduce((sum, item) => sum + (item?.qty || 0), 0);
   const cooldownActive = bookingCooldown > 0;
   const isPizzaria = establishment.niche === 'Pizzaria';
-  const needsDelivery = (isPizzaria && safeSelectedServices.length > 0) || safeSelectedServices.some((item) => item?.itemType === 'Produto');
+  const hasProducts = safeSelectedServices.some((item) => item?.itemType === 'Produto');
+  const hasServices = safeSelectedServices.some((item) => item?.itemType === 'Servico');
+  const needsDelivery = (isPizzaria && safeSelectedServices.length > 0) || hasProducts;
+  const showDateTime = hasServices && !hasProducts;
+  const showDeliveryAddress = needsDelivery && !hasServices;
   const draft = captureBookingDraft();
 
   function safeMap(arr, fn) {
@@ -235,7 +239,7 @@ function renderPage() {
                 <div class="form-field"><label>Telefone (WhatsApp) *</label><input type="text" name="clientPhone" required placeholder="(11) 99999-9999" ${cooldownActive ? 'disabled' : ''} /></div>
                 <div class="form-field"><label>Email</label><input type="email" name="clientEmail" ${cooldownActive ? 'disabled' : ''} /></div>
               </div>
-              ${needsDelivery ? `
+              ${showDeliveryAddress ? `
               <div class="associate-divider"></div>
               <div class="portal-delivery-title">Endereço de entrega</div>
               <div class="form-field"><label>Logradouro *</label><input type="text" name="addressStreet" placeholder="ex Rua do Ancião" required ${cooldownActive ? 'disabled' : ''} /></div>
@@ -253,12 +257,14 @@ function renderPage() {
               </div>
               <div class="form-field"><label>Favoritar como</label><input type="text" name="addressLabel" placeholder="Ex. Minha casa" ${cooldownActive ? 'disabled' : ''} /></div>
               ` : ''}
+              ${showDateTime ? `
               <div class="form-field"><label>Data desejada *</label><input type="date" name="bookingDate" id="booking-date" required min="${new Date().toISOString().split('T')[0]}" ${cooldownActive ? 'disabled' : ''} /></div>
               <div class="form-field" id="time-slots-container" style="display:none;">
                 <label>Horario disponivel *</label>
                 <div class="available-times-grid" id="time-slots-grid"></div>
                 <input type="hidden" name="dateTime" id="booking-datetime" />
               </div>
+              ` : ''}
               <div class="form-field">
                 <label>Cupom de desconto</label>
                 <div style="display:flex;gap:8px;">
@@ -363,6 +369,10 @@ function renderPage() {
       alert('Por favor, escolha pelo menos um servico antes de continuar.');
       return;
     }
+    
+    const hasProducts = safeSelectedServices.some((item) => item?.itemType === 'Produto');
+    const hasServices = safeSelectedServices.some((item) => item?.itemType === 'Servico');
+    
     const fd = new FormData(form);
     const payload = {
       clientName: fd.get('clientName'),
@@ -381,10 +391,24 @@ function renderPage() {
       addressReference: fd.get('addressReference') || '',
       addressLabel: fd.get('addressLabel') || ''
     };
-    if (!payload.dateTime) {
-      alert('Por favor, selecione uma data e horario disponivel.');
-      return;
+    
+    // Validar campos condicionais
+    if (hasServices && !hasProducts) {
+      // Apenas serviços: requer data/hora
+      if (!payload.dateTime) {
+        alert('Por favor, selecione uma data e horario disponivel.');
+        return;
+      }
     }
+    
+    if (hasProducts && !hasServices) {
+      // Apenas produtos: requer endereço de entrega
+      if (!payload.addressStreet || !payload.addressCity || !payload.addressState || !payload.addressNumber || !payload.addressDistrict) {
+        alert('Por favor, preencha o endereço de entrega completo.');
+        return;
+      }
+    }
+    
     if (!payload.clientName || !payload.clientPhone) {
       alert('Por favor, preencha nome e telefone.');
       return;
