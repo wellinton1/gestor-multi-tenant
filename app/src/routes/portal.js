@@ -378,7 +378,7 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
       clientId: client.id,
       employeeId: null,
       serviceId: services[0].id,
-      serviceName,
+      serviceName: services[0].name,
       total,
       status: 'Pendente',
       source: 'portal',
