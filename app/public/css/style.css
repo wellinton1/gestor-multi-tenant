@@ -1980,7 +1980,7 @@ select.status-select {
   display: block;
   margin-bottom: 6px;
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 700;
   color: #374151;
 }
 
@@ -1992,7 +1992,24 @@ select.status-select {
   width: 100%;
   background: #fff;
   font-size: 14.5px;
+  color: #0f1115;
   transition: border-color var(--transition), box-shadow var(--transition);
+}
+.portal-booking-form .form-field input[type="date"] {
+  color: #0f1115;
+}
+
+[data-theme="dark"] .portal-booking-form .form-field input,
+[data-theme="dark"] .portal-booking-form .form-field textarea {
+  background: #fff;
+  color: #0f1115;
+  border-color: #e0e2e5;
+}
+[data-theme="dark"] .portal-booking-form .form-field input[type="date"] {
+  color: #0f1115;
+}
+[data-theme="dark"] .portal-booking-form .form-field label {
+  color: #e8e6e3;
 }
 .portal-booking-form .form-field input:focus,
 .portal-booking-form .form-field textarea:focus {

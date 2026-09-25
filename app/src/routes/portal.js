@@ -238,13 +238,18 @@ router.get('/:establishmentId/available-times', validate(availableTimesQuerySche
     const openMinutes = openH * 60 + openM;
     const closeMinutes = closeH * 60 + closeM;
 
+    const now = new Date();
+    const isToday = selectedDate.getTime() === today.getTime();
+    const currentMinutes = isToday ? now.getHours() * 60 + now.getMinutes() : -1;
+
     for (let m = openMinutes; m < closeMinutes; m += 30) {
       const hh = String(Math.floor(m / 60)).padStart(2, '0');
       const mm = String(m % 60).padStart(2, '0');
       const time = `${hh}:${mm}`;
+      const isPast = isToday && m <= currentMinutes;
       slots.push({
         time,
-        available: !bookedTimes.has(time)
+        available: !bookedTimes.has(time) && !isPast
       });
     }
 
