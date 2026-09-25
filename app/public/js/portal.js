@@ -437,7 +437,7 @@ function renderPage() {
       const hasPayment = data.hasPayment || false;
       const subtotal = data.subtotal || bookingTotal;
       const discount = data.discount || 0;
-      const appliedCoupon = data.appliedCoupon || null;
+      appliedCoupon = data.appliedCoupon || null;
       selectedServices = [];
       appliedCoupon = null; // reset local state after successful booking
       try {
