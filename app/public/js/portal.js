@@ -475,11 +475,11 @@ function renderPage() {
       }
     } catch (err) {
       alert(err.message);
-      const bottomBtnBook = document.getElementById('bottom-book-btn');
-      const bottomBtnBookOnly = document.getElementById('bottom-book-only-btn');
-      const bottomBtnBookPay = document.getElementById('bottom-book-pay-btn');
-      const allBottomBtns = [bottomBtnBook, bottomBtnBookOnly, bottomBtnBookPay].filter(Boolean);
-      allBottomBtns.forEach(btn => {
+      const btnBook = document.getElementById('bottom-book-btn');
+      const btnBookOnly = document.getElementById('bottom-book-only-btn');
+      const btnBookPay = document.getElementById('bottom-book-pay-btn');
+      const allBtns = [btnBook, btnBookOnly, btnBookPay].filter(Boolean);
+      allBtns.forEach(btn => {
         btn.disabled = false;
         btn.textContent = btn.id === 'bottom-book-pay-btn' ? 'Agendar e Pagar' : 'Agendar Horário';
       });
