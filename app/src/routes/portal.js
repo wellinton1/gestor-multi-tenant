@@ -585,6 +585,11 @@ router.post('/:establishmentId/pay-card', async (req, res) => {
       items,
       description,
       customerId,
+      // O botao e' "Cartao de credito": sem isto o provider usa o default
+      // ['PIX'] e o cliente era redirecionado para uma pagina de PIX — nunca
+      // aparecia o formulario de cartao. Inclui PIX junto para o cliente
+      // poder trocar caso o cartao nao passe.
+      methods: ['CARD', 'PIX'],
       returnUrl,
       completionUrl
     }, config);

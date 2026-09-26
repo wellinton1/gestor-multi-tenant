@@ -16,22 +16,32 @@ const PROVIDERS = {
       createProduct: '/products/create',
       listProducts: '/products/list'
     },
-    formatPixPayload: (params) => ({
-      method: 'PIX',
-      data: {
-        amount: Math.round(params.amount * 100),
-        description: params.description || 'Pagamento',
-        ...(params.expiresIn && { expiresIn: params.expiresIn }),
-        ...(params.customer && {
-          customer: {
-            name: params.customer.name,
-            email: params.customer.email,
-            cellphone: params.customer.cellphone,
-            ...(params.customer.taxId && { taxId: params.customer.taxId })
-          }
-        })
-      }
-    }),
+    // O AbacatePay valida `customer` como um todo: se voce informa QUALQUER
+    // campo, exige name + cellphone + email + taxId. Mandar um customer
+    // parcial (ex.: so email, comum no portal quando o cliente nao deixou CPF)
+    // fazia a API responder com um erro de union do Zod
+    // ("Value should be one of 'object', 'object'") e nenhum QR Code saia.
+    // Sem os 4 campos, o PIX e gerado sem customer — aceito pelo provedor.
+    formatPixPayload: (params) => {
+      const c = params.customer || {};
+      const hasCompleteCustomer = !!(c.name && c.cellphone && c.email && c.taxId);
+      return {
+        method: 'PIX',
+        data: {
+          amount: Math.round(params.amount * 100),
+          description: params.description || 'Pagamento',
+          ...(params.expiresIn && { expiresIn: params.expiresIn }),
+          ...(hasCompleteCustomer && {
+            customer: {
+              name: c.name,
+              email: c.email,
+              cellphone: c.cellphone,
+              taxId: c.taxId
+            }
+          })
+        }
+      };
+    },
     formatCheckoutPayload: (params) => ({
       items: normalizeCheckoutItems(params.items),
       frequency: 'ONE_TIME',
