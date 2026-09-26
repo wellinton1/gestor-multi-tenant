@@ -461,6 +461,9 @@ function renderPage() {
           discount,
           appliedCoupon,
           hasPayment,
+          // O servidor cobra o valor gravado no agendamento: o modal precisa
+          // do id para poder gerar o PIX/checkout.
+          appointmentId: (data.appointment && data.appointment.id) || null,
           clientName: payload.clientName,
           clientEmail: payload.clientEmail,
           clientPhone: payload.clientPhone
@@ -618,7 +621,7 @@ function startBookingCooldown() {
 
 function renderSuccess(bookingInfo, shouldPay = false) {
   const info = bookingInfo || {};
-  const hasPayment = info.hasPayment && info.total > 0;
+  const hasPayment = info.hasPayment && info.total > 0 && !!info.appointmentId;
   const subtotal = info.subtotal || info.total;
   const discount = info.discount || 0;
   const appliedCoupon = info.appliedCoupon || null;
@@ -708,12 +711,11 @@ function renderSuccess(bookingInfo, shouldPay = false) {
     const amountOpts = overlay.querySelectorAll('.pay-amount-opt');
 
     let payMode = 'full';
+    // Valor exato exibido enquanto o servidor nao responde. O PIX/checkout
+    // Envia `mode` e o servidor cobra o total (ou o sinal) do agendamento.
     const selectedAmount = () => payMode === 'half'
-      ? Math.round(info.total * 100 / 2) / 100
+      ? Math.round(info.total * 50) / 100
       : info.total;
-    const selectedDescription = () => payMode === 'half'
-      ? `Sinal (50%) - Agendamento - ${info.clientName}`
-      : `Agendamento - ${info.clientName}`;
 
     const OPT_BASE = 'flex:1;padding:10px 8px;border-radius:8px;cursor:pointer;font-size:13px;color:inherit;display:flex;flex-direction:column;gap:2px;align-items:center;';
     const OPT_SELECTED = OPT_BASE + 'border:2px solid var(--accent);background:rgba(var(--accent-rgb),0.08);';
@@ -749,8 +751,8 @@ function renderSuccess(bookingInfo, shouldPay = false) {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            amount: selectedAmount(),
-            description: selectedDescription(),
+            appointmentId: info.appointmentId,
+            mode: payMode,
             customerEmail: info.clientEmail || undefined,
             customerName: info.clientName,
             customerPhone: info.clientPhone
@@ -763,14 +765,16 @@ function renderSuccess(bookingInfo, shouldPay = false) {
         const brCode = pixData.brCode || '';
         const brCodeBase64 = pixData.brCodeBase64 || '';
         const pixId = pixData.id || '';
+        // O valor cobrado vem do servidor (total do agendamento ou sinal).
+        const chargedAmount = typeof data.amount === 'number' ? data.amount : selectedAmount();
 
         payBtn.style.display = 'none';
         cardBtn.style.display = 'none';
 
         resultEl.innerHTML = `
           <div style="text-align:center;">
-            <p style="font-weight:600;margin:0 0 10px 0;">${formatMoney(selectedAmount())}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
-            ${brCodeBase64 ? `<img src="${brCodeBase64}" alt="QR Code PIX" style="max-width:200px;margin:0 auto 12px;display:block;border-radius:8px;" />` : ''}
+            <p style="font-weight:600;margin:0 0 10px 0;">${formatMoney(chargedAmount)}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
+            ${brCodeBase64 ? `<img src="${escapeHtml(brCodeBase64)}" alt="QR Code PIX" style="max-width:200px;margin:0 auto 12px;display:block;border-radius:8px;" />` : ''}
             <div style="background:var(--bg-muted,#f5f5f5);padding:10px;border-radius:6px;word-break:break-all;font-family:monospace;font-size:11px;margin-bottom:10px;max-height:80px;overflow-y:auto;">
               ${escapeHtml(brCode)}
             </div>
@@ -803,6 +807,11 @@ function renderSuccess(bookingInfo, shouldPay = false) {
 
         const checkBtn = resultEl.querySelector('#check-pix-btn');
         if (checkBtn) {
+          // Cada provedor nomeia o pagamento pago de um jeito: AbacatePay e
+          // MP usam CONFIRMED/approved, Asaas RECEIVED, outros PAID/COMPLETED.
+          // Antes so aceitava PAID/COMPLETED, entao o PIX pago nunca era
+          // reconhecido e o cliente achava que nao tinha sido pago.
+          const PAID_STATUSES = ['PAID', 'COMPLETED', 'CONFIRMED', 'APPROVED', 'RECEIVED', 'CONFIRMED_PAYMENT_RECEIVED'];
           checkBtn.addEventListener('click', async () => {
             const statusEl = resultEl.querySelector('#pix-status');
             statusEl.textContent = 'Verificando...';
@@ -810,12 +819,16 @@ function renderSuccess(bookingInfo, shouldPay = false) {
               const csrfToken2 = getCsrfToken();
               const headers2 = {};
               if (csrfToken2) headers2['X-CSRF-Token'] = csrfToken2;
-              const statusRes = await fetch(`/api/portal/${establishment.id}/check-pix/${pixId}`, { headers: headers2 });
+              const statusRes = await fetch(`/api/portal/${establishment.id}/check-pix/${encodeURIComponent(pixId)}`, { headers: headers2 });
               const statusData = await statusRes.json();
               if (!statusRes.ok) throw new Error(statusData.error || 'Erro');
               const s = (statusData.data && statusData.data.status) || statusData.status || 'Desconhecido';
-              if (s === 'PAID' || s === 'COMPLETED') {
+              if (PAID_STATUSES.includes(String(s).toUpperCase())) {
                 statusEl.innerHTML = '<span style="color:#10b981;font-weight:600;">Pagamento confirmado!</span>';
+                checkBtn.disabled = true;
+                checkBtn.textContent = 'Pagamento confirmado';
+              } else if (['CANCELED', 'CANCELLED', 'EXPIRED', 'DEVOLVED', 'REJECTED'].includes(String(s).toUpperCase())) {
+                statusEl.innerHTML = `<span style="color:#ef4444;font-weight:600;">Pagamento ${escapeHtml(String(s).toLowerCase())}.</span> <span style="color:var(--text-muted);">Gere um novo PIX.</span>`;
               } else {
                 statusEl.innerHTML = `<strong>Status:</strong> ${escapeHtml(s)} <span style="color:var(--text-muted);">(aguardando pagamento)</span>`;
               }
@@ -842,8 +855,8 @@ function renderSuccess(bookingInfo, shouldPay = false) {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            amount: selectedAmount(),
-            description: selectedDescription(),
+            appointmentId: info.appointmentId,
+            mode: payMode,
             customerEmail: info.clientEmail || undefined,
             customerName: info.clientName,
             customerPhone: info.clientPhone,
@@ -854,25 +867,26 @@ function renderSuccess(bookingInfo, shouldPay = false) {
         const data = await res.json();
         if (!res.ok) {
           const msg = data.details || data.error || 'Erro ao gerar pagamento.';
-          if (msg.includes('CARD is not available')) {
+          if (typeof msg === 'string' && msg.includes('CARD is not available')) {
             throw new Error('Pagamento com cartão não está habilitado para esta loja. Use PIX ou configure no AbacatePay.');
           }
-          throw new Error(msg);
+          throw new Error(typeof msg === 'string' ? msg : 'Erro ao gerar pagamento.');
         }
 
         const cardUrl = (data.data && data.data.url) || data.url;
         if (!cardUrl) throw new Error('Link de pagamento nao retornado.');
+        const chargedAmount = typeof data.amount === 'number' ? data.amount : selectedAmount();
 
         payBtn.style.display = 'none';
         cardBtn.style.display = 'none';
 
         resultEl.innerHTML = `
           <div style="text-align:center;">
-            <p style="font-weight:600;margin:0 0 12px 0;">${formatMoney(selectedAmount())}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
+            <p style="font-weight:600;margin:0 0 12px 0;">${formatMoney(chargedAmount)}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
             <a href="${escapeHtml(cardUrl)}" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;">
-              ${CARD_ICON} Pagar ${formatMoney(selectedAmount())} com cartao
+              ${CARD_ICON} Pagar ${formatMoney(chargedAmount)} com cartao
             </a>
-            <p style="margin-top:8px;font-size:12px;color:var(--text-muted);">Voce sera redirecionado para a pagina segura do AbacatePay</p>
+            <p style="margin-top:8px;font-size:12px;color:var(--text-muted);">Voce será redirecionado para a pagina segura de pagamento</p>
           </div>
         `;
       } catch (e) {

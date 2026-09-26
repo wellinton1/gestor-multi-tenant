@@ -403,7 +403,18 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
     const appointment = store.insert('appointments', appointmentData);
 
     const hasPayment = !!(est.pixApiKey || est.abacatePayApiKey);
-    res.status(201).json({ ok: true, appointment, total, subtotal, discount, appliedCoupon, hasPayment });
+    // Devolve os dados do cliente junto: o modal de pagamento monta a
+    // descricao e o e-mail do pagador a partir deles (sem isso o PIX saia
+    // como "Agendamento - undefined" e o cliente ficava sem CPF/e-mail).
+    res.status(201).json({
+      ok: true,
+      appointment: { ...appointment, clientName: client.name, clientEmail: client.email || '', clientPhone: client.phone || '' },
+      total,
+      subtotal,
+      discount,
+      appliedCoupon,
+      hasPayment
+    });
   } catch (err) {
     console.error('ERROR in POST /api/portal/:id/book:', err.message);
     res.status(500).json({
@@ -418,29 +429,90 @@ const {
   checkPixPayment,
   createCustomer,
   createCheckout,
-  createProduct
+  createProduct,
+  checkoutNeedsProduct
 } = require('../utils/payment-providers');
 
 function getPaymentConfig(est) {
+  let extraHeaders = {};
+  if (est.pixExtraHeaders) {
+    // Configuracao corrompida nao pode derrubar todo o pagamento: ignora e
+    // segue com o parse padrao (antes o JSON.parse lancava e virava 500).
+    try {
+      const parsed = JSON.parse(est.pixExtraHeaders);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) extraHeaders = parsed;
+    } catch (err) {
+      console.error('[portal] pixExtraHeaders invalido para o estabelecimento', est.id, '- ignorado:', err.message);
+    }
+  }
   return {
     provider: est.pixProvider || 'abacatepay',
     apiKey: est.pixApiKey || est.abacatePayApiKey || '',
     baseUrl: est.pixBaseUrl || '',
-    extraHeaders: est.pixExtraHeaders ? JSON.parse(est.pixExtraHeaders) : {}
+    extraHeaders
   };
+}
+
+// Valor a cobrar SEMPRE vem do agendamento gravado no banco, nunca do body
+// do cliente: sem isto, qualquer pessoa faz POST {amount:0.01} e paga centavo
+// por um servico de R$500. O cliente pode escolher pagar o total ou um sinal
+// (mode 'half'), mas o teto e sempre o total do agendamento.
+function resolveChargeAmount(estId, req) {
+  const { appointmentId, mode, amount } = req.body || {};
+  if (!appointmentId) {
+    const err = new Error('Informe o agendamento (appointmentId) para gerar o pagamento.');
+    err.status = 400;
+    throw err;
+  }
+  const appointment = store.findByIdScoped('appointments', String(appointmentId), estId);
+  if (!appointment) {
+    const err = new Error('Agendamento nao encontrado para esta loja.');
+    err.status = 404;
+    throw err;
+  }
+  if (appointment.status === 'Cancelado') {
+    const err = new Error('Este agendamento foi cancelado.');
+    err.status = 409;
+    throw err;
+  }
+  const total = Number(appointment.total) || 0;
+  if (total <= 0) {
+    const err = new Error('Agendamento sem valor a cobrar.');
+    err.status = 400;
+    throw err;
+  }
+
+  let charge = total;
+  if (mode === 'half') {
+    charge = Math.round(total * 50) / 100;
+  } else if (amount !== undefined && amount !== null && amount !== '') {
+    // Aceita pagamento parcial (sinal) mas nunca acima do total.
+    const parsed = Number(amount);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > total + 0.001) {
+      const err = new Error('Valor invalido para este agendamento.');
+      err.status = 400;
+      throw err;
+    }
+    charge = Math.round(parsed * 100) / 100;
+  }
+  if (charge <= 0 || charge > total + 0.001) {
+    const err = new Error('Valor invalido para este agendamento.');
+    err.status = 400;
+    throw err;
+  }
+  return { appointment, total, charge };
 }
 
 router.post('/:establishmentId/pay-pix', async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    if (est.paused === true) return res.status(423).json({ error: 'Esta loja esta pausada.', paused: true });
     const config = getPaymentConfig(est);
     if (!config.apiKey) return res.status(400).json({ error: 'Pagamento nao configurado para este estabelecimento.' });
 
-    const { amount, description, customerEmail, customerName, customerPhone, customerTaxId } = req.body || {};
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Valor e obrigatorio.' });
-    }
+    const { customerEmail, customerName, customerPhone, customerTaxId } = req.body || {};
+    const { appointment, charge } = resolveChargeAmount(est.id, req);
 
     const customer = customerEmail ? {
       email: customerEmail,
@@ -450,16 +522,17 @@ router.post('/:establishmentId/pay-pix', async (req, res) => {
     } : undefined;
 
     const result = await createPixPayment(config.provider, config.apiKey, {
-      amount,
-      description: description || 'Agendamento',
+      amount: charge,
+      description: `Agendamento - ${appointment.serviceName || est.name}`,
       customer
     }, config);
 
-    res.json(result);
+    res.json({ ...result, amount: charge, appointmentId: appointment.id });
   } catch (err) {
-    console.error('ERROR POST /api/portal/:id/pay-pix:', err.message);
-    res.status(500).json({
-      error: err.message || 'Erro ao gerar PIX',
+    const status = err.status || 500;
+    if (status >= 500) console.error('ERROR POST /api/portal/:id/pay-pix:', err.message);
+    res.status(status).json({
+      error: status >= 500 ? (err.message || 'Erro ao gerar PIX') : err.message,
       ...(isProduction ? {} : { details: err.message, response: err.responseData })
     });
   }
@@ -471,13 +544,13 @@ router.post('/:establishmentId/pay-card', async (req, res) => {
   try {
     const est = store.findById('establishments', req.params.establishmentId);
     if (!est) return res.status(404).json({ error: 'Estabelecimento nao encontrado.' });
+    if (est.paused === true) return res.status(423).json({ error: 'Esta loja esta pausada.', paused: true });
     const config = getPaymentConfig(est);
     if (!config.apiKey) return res.status(400).json({ error: 'Pagamento nao configurado para este estabelecimento.' });
 
-    const { amount, description, customerEmail, customerName, customerPhone, customerTaxId, returnUrl, completionUrl } = req.body || {};
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Valor e obrigatorio.' });
-    }
+    const { customerEmail, customerName, customerPhone, customerTaxId, returnUrl, completionUrl } = req.body || {};
+    const { appointment, charge } = resolveChargeAmount(est.id, req);
+    const description = `Agendamento - ${appointment.serviceName || est.name}`;
 
     // Cliente pre-cadastrado e opcional: sem email o checkout coleta os dados na pagina hospedada.
     let customerId;
@@ -491,26 +564,37 @@ router.post('/:establishmentId/pay-card', async (req, res) => {
       customerId = customerResult.data?.id || customerResult.id;
     }
 
-    const productResult = await createProduct(config.provider, config.apiKey, {
-      externalId: `portal-${est.id}-${Date.now()}`,
-      name: String(description || 'Agendamento'),
-      price: amount
-    }, config);
-    const productId = productResult.data?.id || productResult.id;
+    // Só o AbacatePay exige product cadastrado. Nos demais (MP, Asaas, API
+    // própria) o valor vai inline nos itens — chamar createProduct ali quebrava
+    // o "Agendar e Pagar" com cartão com 500.
+    let items;
+    if (checkoutNeedsProduct(config.provider)) {
+      const productResult = await createProduct(config.provider, config.apiKey, {
+        externalId: `portal-${est.id}-${appointment.id}`,
+        name: description,
+        price: charge
+      }, config);
+      const productId = productResult.data?.id || productResult.id;
+      if (!productId) throw new Error('Provedor nao retornou o product do checkout.');
+      items = [{ id: productId, name: description, price: charge, qty: 1 }];
+    } else {
+      items = [{ name: description, price: charge, qty: 1 }];
+    }
 
-    const isHttpUrl = (v) => typeof v === 'string' && /^https?:\/\//i.test(v);
     const checkoutResult = await createCheckout(config.provider, config.apiKey, {
-      items: [{ id: productId, quantity: 1 }],
+      items,
+      description,
       customerId,
       returnUrl,
       completionUrl
     }, config);
 
-    res.json(checkoutResult);
+    res.json({ ...checkoutResult, amount: charge, appointmentId: appointment.id });
   } catch (err) {
-    console.error('ERROR POST /api/portal/:id/pay-card:', err.message, err.responseData || '');
-    res.status(500).json({
-      error: err.message || 'Erro ao criar pagamento com cartao',
+    const status = err.status || 500;
+    if (status >= 500) console.error('ERROR POST /api/portal/:id/pay-card:', err.message, err.responseData || '');
+    res.status(status).json({
+      error: status >= 500 ? (err.message || 'Erro ao criar pagamento com cartao') : err.message,
       ...(isProduction ? {} : { details: err.message, response: err.responseData })
     });
   }

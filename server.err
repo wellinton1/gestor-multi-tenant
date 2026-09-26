@@ -1,0 +1,24 @@
+Erro nao tratado: providerConfig.formatProductPayload is not a function
+ERROR POST /api/portal/:id/pay-card: providerConfig.formatProductPayload is not a function 
+Erro nao tratado: providerConfig.formatProductPayload is not a function
+ERROR POST /api/portal/:id/pay-card: auth_error {
+  message: 'invalid_token',
+  error: 'auth_error',
+  status: 400,
+  cause: []
+}
+Erro nao tratado: providerConfig.formatProductPayload is not a function
+ERROR POST /api/portal/:id/pay-card: A chave de API fornecida é inválida {
+  errors: [
+    {
+      code: 'invalid_access_token',
+      description: 'A chave de API fornecida é inválida'
+    }
+  ]
+}
+Erro nao tratado: providerConfig.formatProductPayload is not a function
+ERROR POST /api/portal/:id/pay-card: providerConfig.formatProductPayload is not a function 
+Erro nao tratado: Not found
+Erro nao tratado: fetch failed
+Erro nao tratado: Asaas retornou 404
+Erro nao tratado: Failed to parse URL from http://127.0.0.1:4599undefined

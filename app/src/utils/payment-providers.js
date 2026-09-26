@@ -6,6 +6,8 @@ const PROVIDERS = {
     name: 'AbacatePay',
     baseUrl: 'https://api.abacatepay.com/v2',
     authType: 'bearer',
+    // Somente o AbacatePay exige um product cadastrado antes do checkout.
+    checkoutNeedsProduct: true,
     endpoints: {
       createCustomer: '/customers/create',
       createCheckout: '/checkouts/create',
@@ -31,7 +33,7 @@ const PROVIDERS = {
       }
     }),
     formatCheckoutPayload: (params) => ({
-      items: params.items,
+      items: normalizeCheckoutItems(params.items),
       frequency: 'ONE_TIME',
       methods: params.methods || ['PIX'],
       ...(params.customerId && { customerId: params.customerId }),
@@ -75,6 +77,9 @@ const PROVIDERS = {
     name: 'Mercado Pago',
     baseUrl: 'https://api.mercadopago.com',
     authType: 'bearer',
+    // A preference do MP recebe os itens inline (title/unit_price): nao ha
+    // "product" cadastrado, logo pay-card nao deve chamar createProduct.
+    checkoutNeedsProduct: false,
     endpoints: {
       createPix: '/v1/payments',
       checkPix: '/v1/payments',
@@ -100,22 +105,25 @@ const PROVIDERS = {
       } : { email: 'cliente@email.com' },
       ...(params.expiresIn && { date_of_expiration: new Date(Date.now() + params.expiresIn * 1000).toISOString() })
     }),
-    formatCheckoutPayload: (params) => ({
-      items: params.items?.map(item => ({
+    formatCheckoutPayload: (params) => {
+      const items = normalizeCheckoutItems(params.items).map((item) => ({
         id: item.id,
-        title: item.name || item.title,
-        quantity: item.qty || item.quantity || 1,
-        unit_price: item.price || item.unit_price,
+        title: item.name || 'Pagamento',
+        quantity: item.qty,
+        unit_price: item.price,
         currency_id: 'BRL'
-      })) || [],
-      back_urls: {
-        success: params.returnUrl,
-        failure: params.returnUrl,
-        pending: params.returnUrl
-      },
-      auto_return: 'approved',
-      ...(params.completionUrl && { notification_url: params.completionUrl })
-    }),
+      }));
+      return {
+        items,
+        back_urls: {
+          success: params.returnUrl,
+          failure: params.returnUrl,
+          pending: params.returnUrl
+        },
+        auto_return: 'approved',
+        ...(params.completionUrl && { notification_url: params.completionUrl })
+      };
+    },
     formatCustomerPayload: (params) => ({
       email: params.email,
       first_name: params.name?.split(' ')[0] || 'Cliente',
@@ -147,6 +155,8 @@ const PROVIDERS = {
     name: 'Asaas',
     baseUrl: 'https://api.asaas.com/v3',
     authType: 'access_token',
+    // O checkout do Asaas e um /payments com value+description: nao ha product.
+    checkoutNeedsProduct: false,
     endpoints: {
       createPix: '/payments',
       checkPix: '/payments',
@@ -167,13 +177,16 @@ const PROVIDERS = {
         }
       })
     }),
-    formatCheckoutPayload: (params) => ({
-      billingType: 'PIX',
-      value: params.items?.reduce((sum, item) => sum + (item.price * (item.qty || 1)), 0) || 0,
-      description: params.items?.map(i => `${i.name} x${i.qty || 1}`).join(', ') || 'Pagamento',
-      ...(params.returnUrl && { redirectUrl: params.returnUrl }),
-      ...(params.completionUrl && { notificationUrl: params.completionUrl })
-    }),
+    formatCheckoutPayload: (params) => {
+      const items = normalizeCheckoutItems(params.items);
+      return {
+        billingType: 'PIX',
+        value: items.reduce((sum, item) => sum + (Number(item.price) || 0) * item.qty, 0),
+        description: params.description || items.map((i) => `${i.name} x${i.qty}`).join(', ') || 'Pagamento',
+        ...(params.returnUrl && { redirectUrl: params.returnUrl }),
+        ...(params.completionUrl && { notificationUrl: params.completionUrl })
+      };
+    },
     formatCustomerPayload: (params) => ({
       name: params.name || params.email.split('@')[0],
       email: params.email,
@@ -204,6 +217,9 @@ const PROVIDERS = {
     name: 'PIX Genérico (API Própria)',
     baseUrl: '', // Configured per establishment
     authType: 'bearer',
+    // API propria: envia o item com todos os campos (id, nome, preco, qtd) para
+    // que sirva tanto para o formato "por produto" quanto "por valor".
+    checkoutNeedsProduct: false,
     endpoints: {
       createPix: '/pix/create',
       checkPix: '/pix/check',
@@ -217,7 +233,13 @@ const PROVIDERS = {
       ...(params.customer && { customer: params.customer })
     }),
     formatCheckoutPayload: (params) => ({
-      items: params.items,
+      items: normalizeCheckoutItems(params.items).map((item) => ({
+        ...(item.id && { id: item.id }),
+        name: item.name,
+        price: item.price,
+        qty: item.qty,
+        quantity: item.qty
+      })),
       ...(params.customerId && { customerId: params.customerId }),
       ...(params.returnUrl && { returnUrl: params.returnUrl }),
       ...(params.completionUrl && { completionUrl: params.completionUrl })
@@ -264,13 +286,42 @@ function getAvailableProviders() {
   }));
 }
 
+// Normaliza itens de checkout para um unico formato interno:
+// { id?, name, price, qty }. Cada provedor entao traduz para o seu contrato.
+function normalizeCheckoutItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      ...(item.id ? { id: String(item.id) } : {}),
+      name: String(item.name || item.title || 'Pagamento'),
+      price: Number(item.price != null ? item.price : item.unit_price) || 0,
+      qty: Math.max(1, Math.floor(Number(item.qty || item.quantity) || 1))
+    }));
+}
+
+// Erro de "provedor nao suporta esta operacao" — o chamador deve responder 400
+// (falha de configuracao do usuario), nao 500.
+function unsupported(providerConfig, endpoint) {
+  const err = new Error(`${providerConfig.name} nao suporta a operacao "${endpoint}".`);
+  err.code = 'UNSUPPORTED_OPERATION';
+  err.status = 400;
+  return err;
+}
+
 async function makeRequest(provider, endpoint, apiKey, payload, config = {}) {
   const providerConfig = getProvider(provider);
-  const baseUrl = provider === 'generic' ? config.baseUrl : providerConfig.baseUrl;
-  
+  // Remove barra final para nao gerar "//pix/create" quando a baseUrl tem "/".
+  const baseUrl = String(provider === 'generic' ? config.baseUrl : providerConfig.baseUrl || '').replace(/\/+$/, '');
+
   if (!baseUrl) {
-    throw new Error('URL base não configurada para provedor genérico');
+    throw new Error('URL base nao configurada para provedor generico');
   }
+
+  // Sem endpoint cadastrado, a URL viraria ".../undefined" e o fetch lancaria
+  // ERR_INVALID_URL (500 opaco). Falha de integracao, nao de codigo.
+  const endpointPath = providerConfig.endpoints[endpoint];
+  if (!endpointPath) throw unsupported(providerConfig, endpoint);
 
   const headers = {
     'Content-Type': 'application/json'
@@ -287,22 +338,17 @@ async function makeRequest(provider, endpoint, apiKey, payload, config = {}) {
     Object.assign(headers, config.extraHeaders);
   }
 
-  const url = `${baseUrl}${providerConfig.endpoints[endpoint]}`;
   const method = endpoint === 'checkPix' ? 'GET' : 'POST';
-
-  const opts = {
-    method,
-    headers
-  };
+  let url = `${baseUrl}${endpointPath}`;
+  const opts = { method, headers };
 
   if (method === 'POST' && payload) {
     opts.body = JSON.stringify(payload);
   } else if (method === 'GET' && payload) {
-    // For GET requests, append query params
-    const params = new URLSearchParams(payload);
-    const separator = url.includes('?') ? '&' : '?';
-    opts.method = 'GET';
-    // We'll handle GET with query params differently
+    // checkPix consulta por id: sem a query string o provedor nao sabe o que
+    // procurar e responde "pendente" para sempre.
+    const query = new URLSearchParams(payload).toString();
+    if (query) url += (url.includes('?') ? '&' : '?') + query;
   }
 
   const res = await fetch(url, opts);
@@ -310,7 +356,7 @@ async function makeRequest(provider, endpoint, apiKey, payload, config = {}) {
   try { data = await res.json(); } catch (e) { data = null; }
   
   if (!res.ok) {
-    const errMsg = (data && (data.error || data.errorDetail || data.message || data.errors?.[0]?.description)) 
+    const errMsg = (data && (data.error || data.errorDetail || data.message || (Array.isArray(data.errors) && data.errors[0] && data.errors[0].description)))
       || `${providerConfig.name} retornou ${res.status}`;
     const err = new Error(errMsg);
     err.responseData = data;
@@ -350,18 +396,35 @@ async function createCheckout(provider, apiKey, params, config = {}) {
 
 async function createProduct(provider, apiKey, params, config = {}) {
   const providerConfig = getProvider(provider);
+  if (typeof providerConfig.formatProductPayload !== 'function') {
+    throw unsupported(providerConfig, 'createProduct');
+  }
   const payload = providerConfig.formatProductPayload(params);
   return await makeRequest(provider, 'createProduct', apiKey, payload, config);
 }
 
 async function listProducts(provider, apiKey, config = {}) {
+  const providerConfig = getProvider(provider);
+  if (!providerConfig.endpoints.listProducts) {
+    throw unsupported(providerConfig, 'listProducts');
+  }
   return await makeRequest(provider, 'listProducts', apiKey, null, config);
+}
+
+// O checkout deste provedor exige um product cadastrado antes? (ver
+// checkoutNeedsProduct em cada provider). Se false, o chamador deve passar
+// o valor direto em items: [{ name, price, qty }].
+function checkoutNeedsProduct(provider) {
+  const providerConfig = getProvider(provider);
+  return providerConfig.checkoutNeedsProduct === true;
 }
 
 module.exports = {
   PROVIDERS,
   getProvider,
   getAvailableProviders,
+  normalizeCheckoutItems,
+  checkoutNeedsProduct,
   makeRequest,
   createPixPayment,
   checkPixPayment,

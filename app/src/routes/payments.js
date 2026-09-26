@@ -20,8 +20,26 @@ function getPaymentConfig(estId) {
   const provider = est.pixProvider || 'abacatepay';
   const apiKey = est.pixApiKey || est.abacatePayApiKey || '';
   const baseUrl = est.pixBaseUrl || '';
-  const extraHeaders = est.pixExtraHeaders ? JSON.parse(est.pixExtraHeaders) : {};
+  let extraHeaders = {};
+  if (est.pixExtraHeaders) {
+    // Header corrompido nao pode derrubar toda a tela de pagamentos.
+    try {
+      const parsed = JSON.parse(est.pixExtraHeaders);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) extraHeaders = parsed;
+    } catch (err) {
+      console.error('[payments] pixExtraHeaders invalido para o estabelecimento', estId, '- ignorado:', err.message);
+    }
+  }
   return { provider, apiKey, baseUrl, extraHeaders, configured: !!(apiKey && provider) };
+}
+
+// Erros de integracao (credencial invalida, provedor sem a operacao) viram
+// 4xx com a mensagem do provedor. Antes tudo caia no error handler generico
+// e o painel mostrava "Erro interno do servidor" sem dizer o que corrigir.
+function respondProviderError(res, err, fallbackMessage) {
+  const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 502;
+  if (status >= 500) console.error('[payments]', fallbackMessage, err.message);
+  res.status(status).json({ error: err.message || fallbackMessage, ...(err.responseData ? { details: err.responseData } : {}) });
 }
 
 router.get('/providers', (req, res) => {
@@ -112,7 +130,7 @@ router.post('/create-customer', async (req, res, next) => {
 
     const result = await createCustomer(config.provider, config.apiKey, { email, name, cellphone, taxId }, config);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) { respondProviderError(res, err, 'Erro ao criar cliente no provedor de pagamento.'); }
 });
 
 router.post('/create-checkout', async (req, res, next) => {
@@ -127,7 +145,7 @@ router.post('/create-checkout', async (req, res, next) => {
 
     const result = await createCheckout(config.provider, config.apiKey, { items, customerId, methods, returnUrl, completionUrl }, config);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) { respondProviderError(res, err, 'Erro ao criar checkout.'); }
 });
 
 router.post('/create-pix', async (req, res, next) => {
@@ -142,7 +160,7 @@ router.post('/create-pix', async (req, res, next) => {
 
     const result = await createPixPayment(config.provider, config.apiKey, { amount, description, expiresIn, customer }, config);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) { respondProviderError(res, err, 'Erro ao gerar PIX.'); }
 });
 
 router.get('/check/:id', async (req, res, next) => {
@@ -152,7 +170,7 @@ router.get('/check/:id', async (req, res, next) => {
 
     const result = await checkPixPayment(config.provider, config.apiKey, req.params.id, config);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) { respondProviderError(res, err, 'Erro ao verificar pagamento.'); }
 });
 
 router.post('/create-product', async (req, res, next) => {
@@ -167,7 +185,7 @@ router.post('/create-product', async (req, res, next) => {
 
     const result = await createProduct(config.provider, config.apiKey, { externalId, name, price, description }, config);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) { respondProviderError(res, err, 'Erro ao criar produto no provedor.'); }
 });
 
 router.get('/products', async (req, res, next) => {
@@ -177,7 +195,7 @@ router.get('/products', async (req, res, next) => {
 
     const result = await listProducts(config.provider, config.apiKey, config);
     res.json(result);
-  } catch (err) { next(err); }
+  } catch (err) { respondProviderError(res, err, 'Erro ao listar produtos no provedor.'); }
 });
 
 module.exports = router;
