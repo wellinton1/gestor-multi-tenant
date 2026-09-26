@@ -42,14 +42,30 @@ const PROVIDERS = {
         }
       };
     },
-    formatCheckoutPayload: (params) => ({
-      items: normalizeCheckoutItems(params.items),
-      frequency: 'ONE_TIME',
-      methods: params.methods || ['PIX'],
-      ...(params.customerId && { customerId: params.customerId }),
-      ...(params.returnUrl && { returnUrl: params.returnUrl }),
-      ...(params.completionUrl && { completionUrl: params.completionUrl })
-    }),
+    // O contrato v2 do AbacatePay em `items` e' { id, quantity } com
+    // additionalProperties: false — o preco vem do produto cadastrado. Mandar
+    // o formato interno normalizado ({ id, name, price, qty }) era rejeitado
+    // com "Total price must be at least 100 cents", porque `quantity` nao
+    // existia e o total do checkout ficava 0.
+    formatCheckoutPayload: (params) => {
+      const items = normalizeCheckoutItems(params.items);
+      // O AbacatePay exige `id` de produto em todo item (checkoutNeedsProduct).
+      // Sem esse id o checkout e criado com total 0; falhar aqui deixa o
+      // motivo claro em vez do "Total price must be at least 100 cents".
+      if (items.some((item) => !item.id)) {
+        const err = new Error('Checkout no AbacatePay exige um produto cadastrado (id) em cada item.');
+        err.status = 400;
+        throw err;
+      }
+      return {
+        items: items.map((item) => ({ id: item.id, quantity: item.qty })),
+        frequency: 'ONE_TIME',
+        methods: params.methods || ['PIX'],
+        ...(params.customerId && { customerId: params.customerId }),
+        ...(params.returnUrl && { returnUrl: params.returnUrl }),
+        ...(params.completionUrl && { completionUrl: params.completionUrl })
+      };
+    },
     formatCustomerPayload: (params) => ({
       email: params.email,
       ...(params.name && { name: params.name }),
@@ -440,8 +456,26 @@ async function createCustomer(provider, apiKey, params, config = {}) {
 async function createCheckout(provider, apiKey, params, config = {}) {
   const providerConfig = getProvider(provider);
   const payload = providerConfig.formatCheckoutPayload(params);
-  const data = await makeRequest(provider, provider === 'mercadopago' ? 'createPreference' : 'createCheckout', apiKey, payload, config);
-  return providerConfig.parseCheckoutResponse(data);
+  const endpoint = provider === 'mercadopago' ? 'createPreference' : 'createCheckout';
+  let data;
+  try {
+    data = await makeRequest(provider, endpoint, apiKey, payload, config);
+  } catch (err) {
+    const wantsCard = (payload.methods || []).includes('CARD');
+    // Conta sem cartao habilitado (comum em dev/sandbox e em planos que nao
+    // incluem cartao): o provedor rejeita o checkout INTEIRO, nem com PIX
+    // junto. Refaz so com PIX para nao perder a venda, e sinaliza em
+    // `cardUnavailable` para a interface avisar o usuario.
+    if (wantsCard && /CARD is not available/i.test(err.message || '')) {
+      data = await makeRequest(provider, endpoint, apiKey, { ...payload, methods: ['PIX'] }, config);
+      data = { ...data, cardUnavailable: true };
+    } else {
+      throw err;
+    }
+  }
+  const parsed = providerConfig.parseCheckoutResponse(data);
+  if (data && data.cardUnavailable) parsed.cardUnavailable = true;
+  return parsed;
 }
 
 async function createProduct(provider, apiKey, params, config = {}) {

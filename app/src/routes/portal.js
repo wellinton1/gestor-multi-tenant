@@ -79,7 +79,10 @@ const bookingSchema = z.object({
     });
   }
   
-  if (hasServices && (data.addressStreet || data.addressCity || data.addressState || data.addressNumber || data.addressDistrict)) {
+  // Endereco so e rejeitado em pedidos 100% de servico. Num pedido misto
+  // (produto + servico) o endereco e necessario pela entrega do produto, e
+  // barrar aqui deixava o pedido misto impossivel.
+  if (hasServices && !hasProducts && (data.addressStreet || data.addressCity || data.addressState || data.addressNumber || data.addressDistrict)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['addressStreet'],
@@ -116,7 +119,16 @@ router.get('/:establishmentId', async (req, res) => {
         name: est.name
       });
     }
-    const services = store.allScoped('services', est.id);
+    // Normaliza itemType: registros criados antes do campo existir nao tem
+    // itemType, e o portal decide entre "pedir data/hora" (servico) e
+    // "pedir endereco de entrega" (produto) olhando exatamente esse campo.
+    // Sem o default, um servico legado numa loja de delivery (ex.: Pizzaria)
+    // caia no ramo de produto: o formulario mostrava endereco e NAO mostrava
+    // a data, e o POST era sempre rejeitado na validacao.
+    const services = store.allScoped('services', est.id).map((s) => ({
+      ...s,
+      itemType: s.itemType === 'Produto' ? 'Produto' : 'Servico'
+    }));
     const hasPayment = !!(est.pixApiKey || est.abacatePayApiKey);
     res.json({
       id: est.id,
@@ -296,7 +308,13 @@ router.post('/:establishmentId/book', validate(bookingSchema), async (req, res) 
 
     const hasProducts = services.some((item) => item.itemType === 'Produto');
     const hasServices = services.some((item) => item.itemType === 'Servico');
-    const needsDelivery = est.niche === 'Pizzaria' || hasProducts;
+    // Endereco de entrega e por item, nao por nicho. Antes era
+  // `est.niche === 'Pizzaria' || hasProducts`, que numa Pizzaria exigia
+  // endereco ate para um pedido so de SERVICOS — mas o schema exige data/hora
+  // para servico e PROIBE endereco, entao o agendamento era sempre recusado
+  // ("Endereco de entrega obrigatorio"). O nicho nao pode sobrepor o tipo do
+  // item; quem decide e a composicao do pedido.
+  const needsDelivery = hasProducts;
     const deliveryAddress = {
       addressStreet: String(req.validated.addressStreet || '').trim(),
       addressCity: String(req.validated.addressCity || '').trim(),
@@ -594,7 +612,14 @@ router.post('/:establishmentId/pay-card', async (req, res) => {
       completionUrl
     }, config);
 
-    res.json({ ...checkoutResult, amount: charge, appointmentId: appointment.id });
+    // `cardUnavailable` = a conta nao tem cartao habilitado e o provedor
+    // recusou; o createCheckout ja refez so com PIX para nao perder a venda.
+    res.json({
+      ...checkoutResult,
+      cardUnavailable: checkoutResult.cardUnavailable === true,
+      amount: charge,
+      appointmentId: appointment.id
+    });
   } catch (err) {
     const status = err.status || 500;
     if (status >= 500) console.error('ERROR POST /api/portal/:id/pay-card:', err.message, err.responseData || '');

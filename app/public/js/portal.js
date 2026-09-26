@@ -154,16 +154,24 @@ function renderPage() {
   document.body.dataset.niche = establishment.niche || 'Outro';
   const services = Array.isArray(establishment.services) ? establishment.services : [];
   const safeSelectedServices = Array.isArray(selectedServices) ? selectedServices : [];
+  // `|| 'Servico'` em TODOS os pontos: o itemType decide se o formulario pede
+  // data/hora (servico) ou endereco de entrega (produto). Ler de um jeito e
+  // enviar de outro fazia a Pizzaria com servico legado pedir endereco e
+  // recusar a data no POST.
+  const isProduct = (item) => (item && item.itemType) === 'Produto';
   const icon = NICHE_ICON[establishment.niche] || DEFAULT_ICON;
   const subtotal = safeSelectedServices.reduce((sum, item) => sum + (item?.price || 0) * (item?.qty || 0), 0);
   const itemCount = safeSelectedServices.reduce((sum, item) => sum + (item?.qty || 0), 0);
   const cooldownActive = bookingCooldown > 0;
-  const isPizzaria = establishment.niche === 'Pizzaria';
-  const hasProducts = safeSelectedServices.some((item) => item?.itemType === 'Produto');
-  const hasServices = safeSelectedServices.some((item) => item?.itemType === 'Servico');
-  const needsDelivery = (isPizzaria && safeSelectedServices.length > 0) || hasProducts;
-  const showDateTime = hasServices && !hasProducts;
-  const showDeliveryAddress = needsDelivery && !hasServices;
+  const hasProducts = safeSelectedServices.some(isProduct);
+  const hasServices = safeSelectedServices.some((item) => item && !isProduct(item));
+  // Entrega e decidida pelo item, nao pelo nicho. O backend usa a mesma regra
+  // (`needsDelivery = hasProducts`): usar o nicho aqui fazia a Pizzaria pedir
+  // endereco num agendamento so de servico, que o schema recusa (servico exige
+  // data/hora e nao aceita endereco) — o pedido naso saia nunca.
+  const needsDelivery = hasProducts;
+  const showDateTime = hasServices;
+  const showDeliveryAddress = hasProducts;
   const hasPayment = establishment.hasPayment === true;
   const draft = captureBookingDraft();
 
@@ -387,8 +395,8 @@ function renderPage() {
       return;
     }
     
-    const hasProducts = safeSelectedServices.some((item) => item?.itemType === 'Produto');
-    const hasServices = safeSelectedServices.some((item) => item?.itemType === 'Servico');
+    const hasProducts = safeSelectedServices.some(isProduct);
+    const hasServices = safeSelectedServices.some((item) => item && !isProduct(item));
     
     const fd = new FormData(form);
     const payload = {
@@ -409,21 +417,15 @@ function renderPage() {
       addressLabel: fd.get('addressLabel') || ''
     };
     
-    // Validar campos condicionais
-    if (hasServices && !hasProducts) {
-      // Apenas serviços: requer data/hora
-      if (!payload.dateTime) {
-        alert('Por favor, selecione uma data e horario disponivel.');
-        return;
-      }
+    // Validar campos condicionais (mesma regra do backend: entrega e por item)
+    if (hasServices && !payload.dateTime) {
+      alert('Por favor, selecione uma data e horario disponivel.');
+      return;
     }
-    
-    if (hasProducts && !hasServices) {
-      // Apenas produtos: requer endereço de entrega
-      if (!payload.addressStreet || !payload.addressCity || !payload.addressState || !payload.addressNumber || !payload.addressDistrict) {
-        alert('Por favor, preencha o endereço de entrega completo.');
-        return;
-      }
+
+    if (hasProducts && (!payload.addressStreet || !payload.addressCity || !payload.addressState || !payload.addressNumber || !payload.addressDistrict)) {
+      alert('Por favor, preencha o endereço de entrega completo.');
+      return;
     }
     
     if (!payload.clientName || !payload.clientPhone) {
@@ -805,7 +807,9 @@ function renderSuccess(bookingInfo, shouldPay = false) {
           // MP usam CONFIRMED/approved, Asaas RECEIVED, outros PAID/COMPLETED.
           // Antes so aceitava PAID/COMPLETED, entao o PIX pago nunca era
           // reconhecido e o cliente achava que nao tinha sido pago.
-          const PAID_STATUSES = ['PAID', 'COMPLETED', 'CONFIRMED', 'APPROVED', 'RECEIVED', 'CONFIRMED_PAYMENT_RECEIVED'];
+          // Enum v2 da AbacatePay: PENDING, EXPIRED, CANCELLED, PAID,
+          // UNDER_DISPUTE, REFUNDED, REDEEMED, APPROVED, FAILED.
+          const PAID_STATUSES = ['PAID', 'COMPLETED', 'CONFIRMED', 'APPROVED', 'RECEIVED', 'REDEEMED', 'CONFIRMED_PAYMENT_RECEIVED'];
           checkBtn.addEventListener('click', async () => {
             const statusEl = resultEl.querySelector('#pix-status');
             statusEl.textContent = 'Verificando...';
@@ -861,8 +865,11 @@ function renderSuccess(bookingInfo, shouldPay = false) {
         const data = await res.json();
         if (!res.ok) {
           const msg = data.details || data.error || 'Erro ao gerar pagamento.';
-          if (typeof msg === 'string' && msg.includes('CARD is not available')) {
-            throw new Error('Pagamento com cartão não está habilitado para esta loja. Use PIX ou configure no AbacatePay.');
+          // Backend ja traduz o "CARD is not available" do provedor; aqui so
+          // garantimos que a orientacao mentione o botao de PIX, que funciona
+          // mesmo com o cartao desabilitado na conta.
+          if (/cart[aã]o.*n[aã]o habilitad|not available/i.test(String(msg))) {
+            throw new Error(String(msg) + ' Use o botao "Pagar com PIX" para concluir este pagamento.');
           }
           throw new Error(typeof msg === 'string' ? msg : 'Erro ao gerar pagamento.');
         }
@@ -874,11 +881,19 @@ function renderSuccess(bookingInfo, shouldPay = false) {
         payBtn.style.display = 'none';
         cardBtn.style.display = 'none';
 
+        // Conta sem cartao habilitado: o servidor refez o checkout so com PIX
+        // (para nao perder a venda). Avisa em vez de mostrar "cartao" e
+        // entregar uma pagina de PIX sem explicacao.
+        const avisoCartao = data.cardUnavailable
+          ? '<p style="font-size:12px;color:#f59e0b;margin:0 0 10px;">Cartao de credito nao disponivel nesta conta — o pagamento segue por PIX.</p>'
+          : '';
+
         resultEl.innerHTML = `
           <div style="text-align:center;">
             <p style="font-weight:600;margin:0 0 12px 0;">${formatMoney(chargedAmount)}${payMode === 'half' ? ' <span style="font-weight:400;font-size:12px;color:var(--text-muted);">(sinal - restante no local)</span>' : ''}</p>
+            ${avisoCartao}
             <a href="${escapeHtml(cardUrl)}" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;">
-              ${CARD_ICON} Pagar ${formatMoney(chargedAmount)} com cartao
+              ${CARD_ICON} ${data.cardUnavailable ? 'Pagar com PIX' : 'Pagar com cartao'} ${formatMoney(chargedAmount)}
             </a>
             <p style="margin-top:8px;font-size:12px;color:var(--text-muted);">Voce será redirecionado para a pagina segura de pagamento</p>
           </div>

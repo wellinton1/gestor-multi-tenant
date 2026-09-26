@@ -1887,7 +1887,10 @@ async function openPaymentModal(info) {
               const status = await api('GET', `/api/payments/check/${pixId}`);
               const s = (status.data && status.data.status) || status.status || 'Desconhecido';
               statusEl.innerHTML = `<strong>Status:</strong> ${escapeHtml(s)}`;
-              if (s === 'PAID' || s === 'COMPLETED') {
+              // Cada provedor nomeia o pagamento pago de um jeito. A AbacatePay
+              // v2 usa PAID/APPROVED/REDEEMED; outros usam COMPLETED/CONFIRMED.
+              // Aceitar so PAID/COMPLETED deixava o PIX pago sem confirmacao.
+              if (['PAID', 'COMPLETED', 'CONFIRMED', 'APPROVED', 'RECEIVED', 'REDEEMED'].includes(String(s).toUpperCase())) {
                 statusEl.innerHTML += '<br><span style="color:#10b981;font-weight:600;">Pagamento confirmado!</span>';
               }
             } catch (e) { statusEl.textContent = 'Erro: ' + e.message; }
@@ -1933,6 +1936,9 @@ async function openPaymentModal(info) {
         resultEl.innerHTML = `
           <div style="text-align:center;">
             <p style="margin-bottom:12px;">Checkout criado com sucesso!</p>
+            ${checkoutResult.cardUnavailable
+              ? '<p style="font-size:12px;color:#f59e0b;margin:0 0 10px;">Cartao de credito nao disponivel nesta conta — o checkout segue aceitando apenas PIX.</p>'
+              : ''}
             <a href="${escapeHtml(checkoutUrl)}" target="_blank" rel="noopener" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:6px;">
               ${ICONS.globe} Abrir pagina de pagamento
             </a>
