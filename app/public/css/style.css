@@ -738,6 +738,16 @@ select.status-select {
 
 .service-card-actions { margin-top: 12px; justify-content: flex-start; }
 
+/* Acoes rapidas do card de servico: Agendar + Pagar lado a lado.
+   Ficam acima dos icones de editar/excluir para nao competir com eles. */
+.service-quick-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.service-quick-actions .btn-sm { flex: 1 1 auto; min-width: 96px; }
+
 .service-card:nth-child(1) { animation-delay: 0ms; }
 .service-card:nth-child(2) { animation-delay: 50ms; }
 .service-card:nth-child(3) { animation-delay: 100ms; }

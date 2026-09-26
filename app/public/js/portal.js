@@ -138,6 +138,17 @@ function applyTheme() {
   }
 }
 
+// Rotulos dos botoes de acao da barra inferior. Centralizados porque o reset
+// feito no catch do submit (voltar o botao ao estado normal depois do erro)
+// precisa usar exatamente o mesmo texto do render — senao o botao ficava
+// displaying "Agendar Horario" num fluxo que so tem "Agendar"/"Pagar".
+function bookButtonLabels() {
+  if (bookingCooldown > 0) {
+    return { book: `Aguarde ${bookingCooldown}s`, pay: `Aguarde ${bookingCooldown}s` };
+  }
+  return { book: 'Agendar', pay: 'Pagar' };
+}
+
 function renderPage() {
   if (!establishment) return;
   document.body.dataset.niche = establishment.niche || 'Outro';
@@ -283,12 +294,8 @@ function renderPage() {
       <div class="portal-bottom-bar">
         <div class="bottom-summary"><span>${itemCount} item${itemCount === 1 ? '' : 's'}</span><strong>${formatMoney(appliedCoupon ? subtotal - appliedCoupon.discount : subtotal)}</strong></div>
         <div class="bottom-actions" style="display:flex;gap:8px;">
-          ${hasPayment ? `
-            <button type="button" class="btn btn-secondary bottom-book-btn" id="bottom-book-only-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Apenas Agendar'}</button>
-            <button type="button" class="btn btn-primary bottom-book-pay-btn" id="bottom-book-pay-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Agendar e Pagar'}</button>
-          ` : `
-            <button type="button" class="btn btn-primary bottom-book-btn" id="bottom-book-btn" ${cooldownActive ? 'disabled' : ''}>${cooldownActive ? `Aguarde ${bookingCooldown}s` : 'Agendar Horário'}</button>
-          `}
+          <button type="button" class="btn ${hasPayment ? 'btn-secondary' : 'btn-primary'} bottom-book-btn" id="bottom-book-only-btn" ${cooldownActive ? 'disabled' : ''}>${bookButtonLabels().book}</button>
+          ${hasPayment ? `<button type="button" class="btn btn-primary bottom-book-pay-btn" id="bottom-book-pay-btn" ${cooldownActive ? 'disabled' : ''}>${bookButtonLabels().pay}</button>` : ''}
         </div>
       </div>
     </div>
@@ -478,13 +485,14 @@ function renderPage() {
       }
     } catch (err) {
       alert(err.message);
-      const btnBook = document.getElementById('bottom-book-btn');
-      const btnBookOnly = document.getElementById('bottom-book-only-btn');
-      const btnBookPay = document.getElementById('bottom-book-pay-btn');
-      const allBtns = [btnBook, btnBookOnly, btnBookPay].filter(Boolean);
+      const labels = bookButtonLabels();
+      const allBtns = [
+        document.getElementById('bottom-book-only-btn'),
+        document.getElementById('bottom-book-pay-btn')
+      ].filter(Boolean);
       allBtns.forEach(btn => {
         btn.disabled = false;
-        btn.textContent = btn.id === 'bottom-book-pay-btn' ? 'Agendar e Pagar' : 'Agendar Horário';
+        btn.textContent = btn.id === 'bottom-book-pay-btn' ? labels.pay : labels.book;
       });
     }
   };
@@ -493,11 +501,6 @@ function renderPage() {
     e.preventDefault();
     submitBooking(false);
   });
-
-  const bottomBtn = document.getElementById('bottom-book-btn');
-  if (bottomBtn) {
-    bottomBtn.addEventListener('click', submitBooking);
-  }
 
   // Date picker -> load available times
   const dateInput = document.getElementById('booking-date');
@@ -539,20 +542,11 @@ function renderPage() {
 });
     }
     
-  const bottomBtnBook = document.getElementById('bottom-book-btn');
   const bottomBtnBookOnly = document.getElementById('bottom-book-only-btn');
   const bottomBtnBookPay = document.getElementById('bottom-book-pay-btn');
-  
-  const handleBottomBookClick = (shouldPay) => {
-    if (shouldPay) {
-      submitBooking(true);
-    } else {
-      document.getElementById('booking-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  };
 
-  if (bottomBtnBook) {
-    bottomBtnBook.addEventListener('click', () => handleBottomBookClick(false));
+  if (bottomBtnBookOnly) {
+    bottomBtnBookOnly.addEventListener('click', () => submitBooking(false));
   }
   if (bottomBtnBookOnly) {
     bottomBtnBookOnly.addEventListener('click', () => submitBooking(false));

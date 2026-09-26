@@ -1657,15 +1657,19 @@ async function renderPedidosPage() {
   });
 }
 
-function openAppointmentModal(appt) {
+function openAppointmentModal(appt, preset) {
   const isEdit = !!appt;
+  // `preset` pre-preenche o modal quando ele abre a partir de outra tela
+  // (ex.: botao "Agendar" no card de servico) sem ser uma edicao. `appt`
+  // tem precedencia porque na edicao os valores salvos mandam.
+  const pre = appt || preset || {};
   const bodyHtml = `
     <form id="appt-form">
       <div class="form-field">
         <label>Cliente *</label>
         <select name="clientId" id="appt-client-select">
           <option value="">-- Novo cliente --</option>
-          ${cachedClients.map((c) => `<option value="${c.id}" ${appt && appt.clientId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+          ${cachedClients.map((c) => `<option value="${c.id}" ${pre.clientId === c.id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-grid" id="new-client-fields" style="${isEdit ? 'display:none;' : ''}">
@@ -1676,30 +1680,30 @@ function openAppointmentModal(appt) {
         <label>Funcionario</label>
         <select name="employeeId">
           <option value="">-- Nao definido --</option>
-          ${cachedEmployees.map((e) => `<option value="${e.id}" ${appt && appt.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
+          ${cachedEmployees.map((e) => `<option value="${e.id}" ${pre.employeeId === e.id ? 'selected' : ''}>${escapeHtml(e.name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-field">
         <label>Servico</label>
         <select name="serviceId" id="appt-service-select">
           <option value="">-- Nenhum --</option>
-          ${cachedServices.map((s) => `<option value="${s.id}" data-price="${s.price}" ${appt && appt.serviceId === s.id ? 'selected' : ''}>${escapeHtml(s.name)} (${formatMoney(s.price)})</option>`).join('')}
+          ${cachedServices.map((s) => `<option value="${s.id}" data-price="${s.price}" ${pre.serviceId === s.id ? 'selected' : ''}>${escapeHtml(s.name)} (${formatMoney(s.price)})</option>`).join('')}
         </select>
       </div>
       <div class="form-grid">
         <div class="form-field">
           <label>Data e hora *</label>
-          <input type="datetime-local" name="dateTime" value="${appt ? toDateTimeLocalValue(appt.dateTime) : ''}" required />
+          <input type="datetime-local" name="dateTime" value="${pre.dateTime ? toDateTimeLocalValue(pre.dateTime) : ''}" required />
         </div>
         <div class="form-field">
           <label>Total (R$)</label>
-          <input type="number" step="0.01" name="total" id="appt-total-input" value="${appt ? appt.total : ''}" />
+          <input type="number" step="0.01" name="total" id="appt-total-input" value="${pre.total !== undefined && pre.total !== null ? pre.total : ''}" />
         </div>
       </div>
       <div class="form-field">
         <label>Status</label>
         <select name="status">
-          ${['Pendente', 'Em Andamento', 'Concluido', 'Cancelado'].map((s) => `<option value="${s}" ${appt && appt.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+          ${['Pendente', 'Em Andamento', 'Concluido', 'Cancelado'].map((s) => `<option value="${s}" ${pre.status === s ? 'selected' : ''}>${s}</option>`).join('')}
         </select>
       </div>
       <div class="modal-actions">
@@ -1751,6 +1755,12 @@ function openAppointmentModal(appt) {
 }
 
 // ---------- Payment Modal (AbacatePay) ----------
+
+// Rotulo da cobranca: agendamento (padrao) ou avulsa de um servico/produto.
+function payLabel(info) {
+  return info && info.serviceName ? info.serviceName : 'Agendamento';
+}
+
 async function openPaymentModal(info) {
   let apiKeyStatus;
   try {
@@ -1841,7 +1851,7 @@ async function openPaymentModal(info) {
 
       resultEl.innerHTML = '<div class="loading-state">Gerando PIX...</div>';
       try {
-        const payload = { amount, description: `Agendamento - ${info.clientName}` };
+        const payload = { amount, description: `${payLabel(info)} - ${info.clientName}` };
         if (email) payload.customer = { email };
         const result = await api('POST', '/api/payments/create-pix', payload);
         const pixData = result.data || result;
@@ -1904,10 +1914,10 @@ async function openPaymentModal(info) {
         const customerId = (customerResult.data && customerResult.data.id) || customerResult.id;
 
         const productResult = await api('POST', '/api/payments/create-product', {
-          externalId: `appt-${info.appointmentId}-${Date.now()}`,
-          name: `Agendamento - ${info.clientName}`,
+          externalId: `charge-${info.appointmentId || info.serviceId || 'avulso'}-${Date.now()}`,
+          name: `${payLabel(info)} - ${info.clientName}`,
           price: amount,
-          description: `Pagamento do agendamento`
+          description: `Pagamento de ${payLabel(info).toLowerCase()}`
         });
         const productId = (productResult.data && productResult.data.id) || productResult.id;
 
@@ -2148,6 +2158,28 @@ async function renderServicosPage() {
   let services;
   try { services = await api('GET', '/api/services'); } catch (e) { return toast(e.message, true); }
 
+  // O modal de agendamento (botao "Agendar" do card) le os selects de cliente/
+  // funcionario/servico desse cache. Sem preencher aqui, abrir o modal a
+  // partir desta tela vinha com os selects vazios e o servico nao era
+  // pre-selecionado. O cache e populado na tela de Pedidos; esta tela pode
+  // ser aberta direto, entao precisa garantir os dados.
+  cachedServices = services;
+  if (!cachedClients.length) {
+    try { cachedClients = await api('GET', '/api/clients'); } catch (e) { /* select fica vazio */ }
+  }
+  if (!cachedEmployees.length) {
+    try { cachedEmployees = await api('GET', '/api/employees'); } catch (e) { /* select fica vazio */ }
+  }
+
+  // O botao "Pagar" so faz sentido com provedor configurado: sem API key o
+  // clique cairia no modal de configuracao e nao em uma cobranca. Falha ao
+  // ler essa config nao deve esconder a pagina inteira — segue sem o botao.
+  let hasPayment = false;
+  try {
+    const payCfg = await api('GET', '/api/payments/api-key');
+    hasPayment = payCfg && payCfg.configured === true;
+  } catch (e) { /* sem permissao/erro: mostra so Agendar */ }
+
   mainEl().innerHTML = `
     <div class="page-header">
       <div><h1>Servicos e Produtos</h1><p>Gerencie os servicos e produtos oferecidos</p></div>
@@ -2168,6 +2200,10 @@ async function renderServicosPage() {
               ? '<span class="service-duration">Entrega</span>'
               : `<span class="service-duration">${ICONS.clock} ${s.durationMinutes} min</span>`}
           </div>
+          <div class="service-quick-actions">
+            <button class="btn btn-secondary btn-sm book-svc" data-id="${s.id}" title="Agendar este servico">Agendar</button>
+            ${hasPayment ? `<button class="btn btn-primary btn-sm charge-svc" data-id="${s.id}" title="Cobrar este servico">Pagar</button>` : ''}
+          </div>
           <div class="actions-cell service-card-actions">
             <button class="btn-icon edit-svc" data-id="${s.id}">${ICONS.pencil}</button>
             <button class="btn-icon danger delete-svc" data-id="${s.id}">${ICONS.trash}</button>
@@ -2180,11 +2216,116 @@ async function renderServicosPage() {
   mainEl().querySelectorAll('.edit-svc').forEach((btn) => btn.addEventListener('click', () => {
     openServiceModal(services.find((s) => s.id === btn.dataset.id));
   }));
+  // "Agendar" abre o modal de agendamento com o servico ja selecionado e o
+  // total preenchido com o preco dele.
+  mainEl().querySelectorAll('.book-svc').forEach((btn) => btn.addEventListener('click', () => {
+    const svc = services.find((s) => s.id === btn.dataset.id);
+    if (!svc) return;
+    openAppointmentModal(null, { serviceId: svc.id, total: svc.price });
+  }));
+  // "Pagar" escolhe o cliente e cobra o valor do servico.
+  mainEl().querySelectorAll('.charge-svc').forEach((btn) => btn.addEventListener('click', async () => {
+    const svc = services.find((s) => s.id === btn.dataset.id);
+    if (!svc) return;
+    try {
+      const clients = await api('GET', '/api/clients');
+      openServiceChargeModal(svc, Array.isArray(clients) ? clients : []);
+    } catch (e) { toast(e.message, true); }
+  }));
   mainEl().querySelectorAll('.delete-svc').forEach((btn) => btn.addEventListener('click', async () => {
     if (!confirm('Excluir este item?')) return;
     try { await api('DELETE', `/api/services/${btn.dataset.id}`); toast('Item excluido.'); renderServicosPage(); }
     catch (e) { toast(e.message, true); }
   }));
+}
+
+// Cobrar um servico/produto avulso (sem agendamento): o admin escolhe para
+// quem e, e a cobranca usa o mesmo modal de PIX/checkout dos agendamentos.
+function openServiceChargeModal(svc, clients) {
+  const bodyHtml = `
+    <form id="svc-charge-form">
+      <div class="form-field">
+        <label>Item</label>
+        <input type="text" value="${escapeHtml(svc.name)}" disabled />
+      </div>
+      <div class="form-field">
+        <label>Cliente *</label>
+        <select name="clientId" id="charge-client-select">
+          <option value="">-- Cliente avulso --</option>
+          ${clients.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${c.phone ? ` (${escapeHtml(c.phone)})` : ''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-grid" id="charge-client-fields">
+        <div class="form-field"><label>Nome</label><input type="text" name="walkName" placeholder="Nome do cliente" /></div>
+        <div class="form-field"><label>Telefone</label><input type="text" name="walkPhone" placeholder="(11) 99999-9999" /></div>
+      </div>
+      <div class="form-field">
+        <label>Email</label>
+        <input type="email" name="chargeEmail" id="charge-email" placeholder="email@exemplo.com" />
+      </div>
+      <div class="form-field">
+        <label>Valor (R$) *</label>
+        <input type="number" step="0.01" name="amount" id="charge-amount" value="${svc.price}" min="0.01" required />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancel-svc-charge">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Cobrar</button>
+      </div>
+    </form>
+  `;
+
+  showModal(`Cobrar ${svc.name}`, bodyHtml, (overlay) => {
+    overlay.querySelector('#cancel-svc-charge').addEventListener('click', closeModal);
+    const select = overlay.querySelector('#charge-client-select');
+    const walkFields = overlay.querySelector('#charge-client-fields');
+    const emailInput = overlay.querySelector('#charge-email');
+
+    const syncClientFields = () => {
+      const isWalkIn = !select.value;
+      walkFields.style.display = isWalkIn ? 'grid' : 'none';
+      walkFields.querySelectorAll('input').forEach((i) => { i.required = isWalkIn; });
+    };
+    select.addEventListener('change', () => {
+      syncClientFields();
+      const c = clients.find((item) => item.id === select.value);
+      if (c && c.email) emailInput.value = c.email;
+    });
+    syncClientFields();
+
+    overlay.querySelector('#svc-charge-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const amount = parseFloat(fd.get('amount'));
+      if (!amount || amount <= 0) return toast('Informe um valor valido.', true);
+
+      let clientName = '';
+      let clientEmail = String(fd.get('chargeEmail') || '').trim();
+      let clientPhone = '';
+      const clientId = fd.get('clientId');
+      if (clientId) {
+        const c = clients.find((item) => item.id === clientId);
+        if (!c) return toast('Cliente invalido.', true);
+        clientName = c.name;
+        clientPhone = c.phone || '';
+        if (!clientEmail) clientEmail = c.email || '';
+      } else {
+        clientName = String(fd.get('walkName') || '').trim();
+        clientPhone = String(fd.get('walkPhone') || '').trim();
+        if (!clientName) return toast('Informe o nome do cliente.', true);
+      }
+      if (!clientEmail) return toast('Informe o email do cliente (necessario para o checkout).', true);
+
+      closeModal();
+      openPaymentModal({
+        serviceId: svc.id,
+        serviceName: svc.name,
+        total: amount,
+        clientName,
+        clientEmail,
+        clientPhone
+      });
+    });
+  });
 }
 
 function filterLastMonth(items) {

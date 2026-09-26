@@ -309,6 +309,20 @@ function unsupported(providerConfig, endpoint) {
   return err;
 }
 
+// Alguns provedores (AbacatePay) respondem com o dump de validacao do proprio
+// Zod ("Value should be one of 'object', 'object'") quando a API key esta
+// invalida. Repassar isso ao dono da loja na ajuda em nada; a causa real,
+// quase sempre, e a credencial. Vale tanto para HTTP de erro quanto para o
+// envelope de erro em HTTP 200.
+function normalizeProviderErrorMessage(message, providerName) {
+  const msg = String(message || '');
+  if (/should be one of|invalid_type|Expected .+ received|received undefined/i.test(msg)) {
+    return `${providerName} recusou a solicitacao. Verifique a API key das Configuracoes `
+      + '(chave invalida ou expirada) e os dados da cobranca.';
+  }
+  return msg;
+}
+
 async function makeRequest(provider, endpoint, apiKey, payload, config = {}) {
   const providerConfig = getProvider(provider);
   // Remove barra final para nao gerar "//pix/create" quando a baseUrl tem "/".
@@ -358,12 +372,26 @@ async function makeRequest(provider, endpoint, apiKey, payload, config = {}) {
   if (!res.ok) {
     const errMsg = (data && (data.error || data.errorDetail || data.message || (Array.isArray(data.errors) && data.errors[0] && data.errors[0].description)))
       || `${providerConfig.name} retornou ${res.status}`;
-    const err = new Error(errMsg);
+    const err = new Error(normalizeProviderErrorMessage(errMsg, providerConfig.name));
     err.responseData = data;
     err.status = res.status;
     throw err;
   }
-  
+
+  // Alguns provedores (AbacatePay) respondem HTTP 200 com um envelope de
+  // erro: { success: false, data: null, error: "..." }. Sem checar isso aqui,
+  // o parse*Response recebia `null` e o Zod do proprio provedor estourava,
+  // devolvendo ao cliente uma mensagem crua e inútil em vez da causa real.
+  if (data && typeof data === 'object' && data.success === false) {
+    const errMsg = data.error
+      || (typeof data.errors === 'object' && data.errors && JSON.stringify(data.errors))
+      || `${providerConfig.name} recusou a operacao.`;
+    const err = new Error(normalizeProviderErrorMessage(errMsg, providerConfig.name));
+    err.responseData = data;
+    err.status = 422;
+    throw err;
+  }
+
   return data;
 }
 
@@ -371,7 +399,19 @@ async function createPixPayment(provider, apiKey, params, config = {}) {
   const providerConfig = getProvider(provider);
   const payload = providerConfig.formatPixPayload(params);
   const data = await makeRequest(provider, 'createPix', apiKey, payload, config);
-  return providerConfig.parsePixResponse(data);
+  const parsed = providerConfig.parsePixResponse(data);
+  // Sem brCode nem QR base64 nao ha PIX para mostrar: o modal renderizava um
+  // bloco vazio e o cliente achava que o cobrança tinha sido gerada. Falha
+  // aqui e' erro do provedor, nao sucesso silencioso.
+  if (!parsed.brCode && !parsed.brCodeBase64 && !parsed.qrCode && !parsed.qrCodeBase64) {
+    const err = new Error(
+      `${providerConfig.name} nao devolveu o codigo PIX da cobranca. Verifique a API key e os dados enviados.`
+    );
+    err.responseData = data;
+    err.status = 502;
+    throw err;
+  }
+  return parsed;
 }
 
 async function checkPixPayment(provider, apiKey, paymentId, config = {}) {
